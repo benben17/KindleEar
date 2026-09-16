@@ -4,105 +4,382 @@
 {% endblock -%}
 
 {% block content -%}
-{% set rowStyle = cycler('', 'style="background-color:#f5f5f5;"') %}
-<div class="main">
+<div class="main logs-page-container">
+  <!-- Page Header -->
+  <div class="logs-header">
+    <div class="logs-header-left">
+      <h2>
+        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #2563eb;">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <span>{{ _("Logs") }}</span>
+      </h2>
+      <p>{{ _("Only display last 20 logs") }}</p>
+    </div>
+    <div class="logs-header-actions">
+      <button type="button" class="logs-action-btn" onclick="window.location.reload()" title="{{ _('Refresh') if _('Refresh') != 'Refresh' else '刷新' }}">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span>{{ _("Refresh") if _("Refresh") != "Refresh" else "刷新" }}</span>
+      </button>
+      <a href="/reader" target="_blank" class="logs-action-btn" title="{{ _('Reader') }}">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+        </svg>
+        <span>{{ _("Reader") }}</span>
+      </a>
+      <a href="/my" class="logs-action-btn primary" title="{{ _('Feeds') }}">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>{{ _("Feeds") }}</span>
+      </a>
+    </div>
+  </div>
+
   <div class="logs">
     {% if mylogs -%}
-    <legend>{{_("Only display last 20 logs")}}</legend>
-    <table class="pure-table pure-table-horizontal" width="100%">
-      <colgroup>
-      <col width="30%">
-      <col width="40%">
-      <col width="15%">
-      <col width="10%">
-      <col width="5%">
-      </colgroup>
-      <thead>
-        <tr>
-          <th>{{ _("Time") }}</th>
-          <th>{{ _("Title") }}</th>
-          <th>{{ _("Size") }}</th>
-          <th>{{ _("To") }}</th>
-          <th>{{ _("Status") }}</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for log in mylogs -%}
-        <tr {{rowStyle.next()|safe}}>
-          {% if log.time_str.startswith(today) -%}
-          <td superscript-title="NEW">{{log.time_str}}</td>
-          {% else -%}
-          <td>{{log.time_str}}</td>
-          {% endif -%}
-          <td>{{log.book}}</td>
-          <td>{{log.size|filesizeformat}}</td>
-          <td>{{log.to}}</td>
-          <td>
-          {% if log.status == 'ok' -%}
-            <span class="status success">{{log.status}}</span>
-          {% elif log.status|length > 15 -%}
-            <span class="log_tooltip status error">{{log.status[:12]}}...<span class="log_tooltiptext">{{log.status}}</span></span>
-          {% else -%}
-            <span class="status error">{{ log.status }}</span>
-          {% endif -%}
-          </td>
-        </tr>
-      {% endfor -%}
-      </tbody>
-    </table>
+    {# 统计指标概览 #}
+    {% set successCount = namespace(value=0) %}
+    {% set todayCount = namespace(value=0) %}
+    {% for l in mylogs %}
+      {% if l.status == 'ok' %}
+        {% set successCount.value = successCount.value + 1 %}
+      {% endif %}
+      {% if l.time_str.startswith(today) %}
+        {% set todayCount.value = todayCount.value + 1 %}
+      {% endif %}
+    {% endfor %}
+
+    <div class="logs-metrics-grid">
+      <div class="logs-metric-card">
+        <div class="logs-metric-icon blue">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+        </div>
+        <div class="logs-metric-info">
+          <div class="logs-metric-label">{{ _("Total Logs") if _("Total Logs") != "Total Logs" else "总记录数" }}</div>
+          <div class="logs-metric-value">{{ mylogs|length }} <small style="font-size:12px;color:#94a3b8;font-weight:normal;">/ 20</small></div>
+        </div>
+      </div>
+      <div class="logs-metric-card">
+        <div class="logs-metric-icon green">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <div class="logs-metric-info">
+          <div class="logs-metric-label">{{ _("Success") if _("Success") != "Success" else "投递成功" }}</div>
+          <div class="logs-metric-value" style="color: #059669;">{{ successCount.value }}</div>
+        </div>
+      </div>
+      <div class="logs-metric-card">
+        <div class="logs-metric-icon rose">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <div class="logs-metric-info">
+          <div class="logs-metric-label">{{ _("Issues") if _("Issues") != "Issues" else "投递异常" }}</div>
+          <div class="logs-metric-value" style="color: {{ '#dc2626' if (mylogs|length - successCount.value) > 0 else '#1e293b' }};">{{ mylogs|length - successCount.value }}</div>
+        </div>
+      </div>
+      <div class="logs-metric-card">
+        <div class="logs-metric-icon purple">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 14 14"></polyline>
+          </svg>
+        </div>
+        <div class="logs-metric-info">
+          <div class="logs-metric-label">{{ _("Today") if _("Today") != "Today" else "今日新增" }}</div>
+          <div class="logs-metric-value" style="color: #7c3aed;">{{ todayCount.value }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <div class="logs-control-bar">
+      <div class="logs-search-box">
+        <svg class="logs-search-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="logSearchInput" placeholder="{{ _('Search book or destination...') if _('Search book or destination...') != 'Search book or destination...' else '搜索书名或投递目标...' }}" oninput="filterLogsTable()">
+      </div>
+      <div class="logs-filter-group">
+        <span class="logs-filter-chip active" data-filter="all" onclick="setLogFilter('all')">{{ _('All') if _('All') != 'All' else '全部' }}</span>
+        <span class="logs-filter-chip" data-filter="ok" onclick="setLogFilter('ok')">{{ _('Success') if _('Success') != 'Success' else '成功' }}</span>
+        <span class="logs-filter-chip" data-filter="error" onclick="setLogFilter('error')">{{ _('Failed') if _('Failed') != 'Failed' else '异常' }}</span>
+        <span class="logs-filter-chip" data-filter="today" onclick="setLogFilter('today')">{{ _('Today') if _('Today') != 'Today' else '今日' }}</span>
+      </div>
+    </div>
+
+    <!-- My Logs Card Table -->
+    <div class="logs-card">
+      <div class="logs-card-header">
+        <div class="logs-card-title">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <legend>{{ _("Only display last 20 logs") }}</legend>
+        </div>
+        <div style="font-size: 12px; color: #64748b;" id="logVisibleCount">{{ mylogs|length }} {{ _('records') if _('records') != 'records' else '条记录' }}</div>
+      </div>
+      <div class="logs-table-wrapper">
+        <table class="logs-modern-table" id="myLogsTable">
+          <thead>
+            <tr>
+              <th style="width: 22%;">{{ _("Time") }}</th>
+              <th style="width: 26%;">{{ _("Title") }}</th>
+              <th style="width: 12%;">{{ _("Size") }}</th>
+              <th style="width: 26%;">{{ _("To") }}</th>
+              <th style="width: 14%;">{{ _("Status") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for log in mylogs -%}
+            {% set isToday = log.time_str.startswith(today) %}
+            {% set isOk = (log.status == 'ok') %}
+            <tr class="log-row" data-today="{{ '1' if isToday else '0' }}" data-status="{{ 'ok' if isOk else 'error' }}" data-search="{{ (log.book ~ ' ' ~ log.to ~ ' ' ~ log.time_str)|lower }}">
+              <td {% if isToday %}superscript-title="NEW"{% endif %}>
+                <div class="logs-time-cell">
+                  <span>{{ log.time_str }}</span>
+                  {% if isToday -%}
+                  <span class="logs-badge-new">{{ _("NEW") if _("NEW") != "NEW" else "今日" }}</span>
+                  {% endif -%}
+                </div>
+              </td>
+              <td>
+                <div class="logs-book-cell">
+                  <svg class="logs-book-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                  </svg>
+                  <span class="logs-book-name" title="{{ log.book }}">{{ log.book }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="logs-size-badge">{{ log.size|filesizeformat }}</span>
+              </td>
+              <td>
+                <div class="logs-to-cell" title="{{ log.to }}">
+                  {% if '@' in log.to %}
+                  <svg class="logs-to-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
+                  </svg>
+                  {% elif 'ebook' in log.to or '/' in log.to %}
+                  <svg class="logs-to-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  {% else %}
+                  <svg class="logs-to-icon" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                  </svg>
+                  {% endif %}
+                  <span class="logs-to-text">{{ log.to }}</span>
+                </div>
+              </td>
+              <td>
+                {% if isOk -%}
+                <span class="status-badge status-ok">
+                  <span class="status-dot"></span>
+                  <span>{{ log.status }}</span>
+                </span>
+                {% elif log.status|length > 15 -%}
+                <span class="status-badge status-error log_tooltip">
+                  <span class="status-dot"></span>
+                  <span>{{ log.status[:12] }}...</span>
+                  <span class="log_tooltiptext">{{ log.status }}</span>
+                </span>
+                {% else -%}
+                <span class="status-badge status-error">
+                  <span class="status-dot"></span>
+                  <span>{{ log.status }}</span>
+                </span>
+                {% endif -%}
+              </td>
+            </tr>
+          {% endfor -%}
+          </tbody>
+        </table>
+      </div>
+    </div>
     {% else -%}
-    <div class="notice-box">{{_('There is nothing here.')}}</div>
+    <div class="logs-empty-state">
+      <div class="logs-empty-icon">
+        <svg viewBox="0 0 24 24" width="56" height="56" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="9" y1="15" x2="15" y2="15"></line>
+        </svg>
+      </div>
+      <h3>{{ _("No Delivery Logs Yet") if _("No Delivery Logs Yet") != "No Delivery Logs Yet" else "暂无推送记录" }}</h3>
+      <p class="notice-box">{{ _('There is nothing here.') }}</p>
+      <a href="/my" class="logs-action-btn primary" style="display:inline-flex;">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>{{ _("Go to Feeds") if _("Go to Feeds") != "Go to Feeds" else "前往订阅与推送" }}</span>
+      </a>
+    </div>
     {% endif -%}
 
     {% if logs -%}
-    <legend>{{ _("Logs of other users") }}</legend>
-    <table class="pure-table pure-table-horizontal" width="100%">
-      <colgroup>
-        <col width="10%" />
-        <col width="25%" />
-        <col width="25%" />
-        <col width="15%" />
-        <col width="20%" />
-        <col width="5%" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th>{{ _("Username") }}</th>
-          <th>{{ _("Time") }}</th>
-          <th>{{ _("Title") }}</th>
-          <th>{{ _("Size") }}</th>
-          <th>{{ _("To") }}</th>
-          <th>{{ _("Status") }}</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for u in logs -%}
-      {% for log in logs[u] -%}
-        <tr {{rowStyle.next()|safe}}>
-          <td>{{u}}</td>
-          {% if log.time_str.startswith(today) -%}
-          <td superscript-title="NEW">{{log.time_str}}</td>
-          {% else -%}
-          <td>{{log.time_str}}</td>
-          {% endif -%}
-          <td>{{log.book}}</td>
-          <td>{{log.size|filesizeformat}}</td>
-          <td>{{log.to}}</td>
-          <td>
-            {% if log.status == 'ok' -%}
-            <span class="status success">{{log.status}}</span>
-            {% elif log.status|length > 15 -%}
-            <span class="log_tooltip status error">{{log.status[:12]}}...<span class="log_tooltiptext">{{log.status}}</span></span>
-            {% else -%}
-            <span class="status error">{{ log.status }}</span>
-            {% endif -%}
-          </td>
-        </tr>
-      {% endfor -%}
-      {% endfor -%}
-      </tbody>
-    </table>
-    {% endif -%} {# endif of if logs -#}
+    <!-- Logs of other users (Admin) -->
+    <div class="logs-card" style="margin-top: 28px;">
+      <div class="logs-card-header">
+        <div class="logs-card-title">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <legend>{{ _("Logs of other users") }}</legend>
+        </div>
+      </div>
+      <div class="logs-table-wrapper">
+        <table class="logs-modern-table">
+          <thead>
+            <tr>
+              <th style="width: 14%;">{{ _("Username") }}</th>
+              <th style="width: 20%;">{{ _("Time") }}</th>
+              <th style="width: 24%;">{{ _("Title") }}</th>
+              <th style="width: 12%;">{{ _("Size") }}</th>
+              <th style="width: 18%;">{{ _("To") }}</th>
+              <th style="width: 12%;">{{ _("Status") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for u in logs -%}
+          {% for log in logs[u] -%}
+            {% set isToday = log.time_str.startswith(today) %}
+            {% set isOk = (log.status == 'ok') %}
+            <tr>
+              <td>
+                <span style="font-weight:600;color:#2563eb;background:#eff6ff;padding:2px 8px;border-radius:6px;font-size:12px;">{{ u }}</span>
+              </td>
+              <td {% if isToday %}superscript-title="NEW"{% endif %}>
+                <div class="logs-time-cell">
+                  <span>{{ log.time_str }}</span>
+                  {% if isToday -%}
+                  <span class="logs-badge-new">{{ _("NEW") if _("NEW") != "NEW" else "今日" }}</span>
+                  {% endif -%}
+                </div>
+              </td>
+              <td>
+                <div class="logs-book-cell">
+                  <span class="logs-book-name" title="{{ log.book }}">{{ log.book }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="logs-size-badge">{{ log.size|filesizeformat }}</span>
+              </td>
+              <td>
+                <div class="logs-to-cell" title="{{ log.to }}">
+                  <span class="logs-to-text">{{ log.to }}</span>
+                </div>
+              </td>
+              <td>
+                {% if isOk -%}
+                <span class="status-badge status-ok">
+                  <span class="status-dot"></span>
+                  <span>{{ log.status }}</span>
+                </span>
+                {% elif log.status|length > 15 -%}
+                <span class="status-badge status-error log_tooltip">
+                  <span class="status-dot"></span>
+                  <span>{{ log.status[:12] }}...</span>
+                  <span class="log_tooltiptext">{{ log.status }}</span>
+                </span>
+                {% else -%}
+                <span class="status-badge status-error">
+                  <span class="status-dot"></span>
+                  <span>{{ log.status }}</span>
+                </span>
+                {% endif -%}
+              </td>
+            </tr>
+          {% endfor -%}
+          {% endfor -%}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif -%}
   </div>
 </div>
+
+<script type="text/javascript">
+var g_activeLogFilter = 'all';
+
+function setLogFilter(filter) {
+  g_activeLogFilter = filter;
+  var chips = document.querySelectorAll('.logs-filter-chip');
+  for (var i = 0; i < chips.length; i++) {
+    if (chips[i].getAttribute('data-filter') === filter) {
+      chips[i].classList.add('active');
+    } else {
+      chips[i].classList.remove('active');
+    }
+  }
+  filterLogsTable();
+}
+
+function filterLogsTable() {
+  var searchInput = document.getElementById('logSearchInput');
+  var query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  var rows = document.querySelectorAll('#myLogsTable tbody tr.log-row');
+  var visibleCount = 0;
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var rowStatus = row.getAttribute('data-status');
+    var isToday = row.getAttribute('data-today') === '1';
+    var searchText = row.getAttribute('data-search') || '';
+
+    var matchesFilter = true;
+    if (g_activeLogFilter === 'ok') {
+      matchesFilter = (rowStatus === 'ok');
+    } else if (g_activeLogFilter === 'error') {
+      matchesFilter = (rowStatus === 'error');
+    } else if (g_activeLogFilter === 'today') {
+      matchesFilter = isToday;
+    }
+
+    var matchesSearch = (!query || searchText.indexOf(query) !== -1);
+
+    if (matchesFilter && matchesSearch) {
+      row.style.display = '';
+      visibleCount++;
+    } else {
+      row.style.display = 'none';
+    }
+  }
+
+  var countLabel = document.getElementById('logVisibleCount');
+  if (countLabel) {
+    countLabel.textContent = visibleCount + ' 条记录';
+  }
+}
+</script>
 {% endblock -%}

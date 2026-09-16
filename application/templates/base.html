@@ -104,6 +104,10 @@
     abbrTr: "{{_('Tr')|safe}}",
     abbrTts: "{{_('Tts')|safe}}",
     abbrAi: "{{_('Ai')|safe}}",
+    fetchAndRead: "{{_('Fetch and read online')|safe}}",
+    fetchingAndBuilding: "{{_('Fetching latest content and generating ebook, please wait...')|safe}}",
+    noNewsFound: "{{_('No new articles found in this feed.')|safe}}",
+    fetchFailed: "{{_('Failed to fetch and generate ebook.')|safe}}",
     testEmailOk: "{{_('The test email has been successfully sent to the following addresses. Please check your inbox or spam folder to confirm its delivery. Depending on your email server, there may be a slight delay.')|safe}}",
     processing: "{{_('Processing...')|safe}}",
     configOk: "{{_('The configuration validation is correct.')|safe}}",
@@ -142,6 +146,7 @@
 <body>
 {% endblock -%}
   <div id="content">
+    {% block header_container -%}
     <!-- Header Navigation -->
     <div class="header pure-menu pure-menu-horizontal">
     {% block header -%}
@@ -181,19 +186,24 @@
       {% endblock -%}
     {% endblock -%}
     </div>
+    {% endblock -%}
 
     {% block menubar -%}
     {% if session.get('userName') -%}
     <div class="pure-menu pure-menu-horizontal pure-menu-scrollable app-menu">
-      <ul class="pure-menu-list">
-        <li class="pure-menu-item {% if tab == 'my' %}pure-menu-selected{% endif %}"><a href="/my" class="pure-menu-link">{{_("Feeds")}}</a></li>
-        <li class="pure-menu-item {% if tab == 'set' %}pure-menu-selected{% endif %}"><a href="/settings" class="pure-menu-link">{{_("Settings")}}</a></li>
-        <li class="pure-menu-item {% if tab == 'logs' %}pure-menu-selected{% endif %}"><a href="/logs" class="pure-menu-link">{{_("Logs")}}</a></li>
-        <li class="pure-menu-item {% if tab == 'admin' %}pure-menu-selected{% endif %}"><a href="/admin" class="pure-menu-link">{{_("Account")}}</a></li>
-        <li class="pure-menu-item {% if tab == 'advset' %}pure-menu-selected{% endif %}"><a href="/advanced" class="pure-menu-link">{{_("Advanced")}}</a></li>
-        <li class="pure-menu-item {% if tab == 'shared' %}pure-menu-selected{% endif %}"><a href="/library" class="pure-menu-link">{{_("Shared")}}</a></li>
-        <li class="pure-menu-item"><a href="/reader" class="pure-menu-link" target="_blank">{{_("Reader")}}</a></li>
-      </ul>
+      <div class="app-menu-wrapper">
+        <ul class="pure-menu-list app-menu-left">
+          <li class="pure-menu-item {% if tab == 'my' %}pure-menu-selected{% endif %}"><a href="/my" class="pure-menu-link">{{_("Feeds")}}</a></li>
+          <li class="pure-menu-item {% if tab == 'set' %}pure-menu-selected{% endif %}"><a href="/settings" class="pure-menu-link">{{_("Settings")}}</a></li>
+          <li class="pure-menu-item {% if tab == 'logs' %}pure-menu-selected{% endif %}"><a href="/logs" class="pure-menu-link">{{_("Logs")}}</a></li>
+          <li class="pure-menu-item {% if tab == 'admin' %}pure-menu-selected{% endif %}"><a href="/admin" class="pure-menu-link">{{_("Account")}}</a></li>
+          <li class="pure-menu-item {% if tab == 'advset' %}pure-menu-selected{% endif %}"><a href="/advanced" class="pure-menu-link">{{_("Advanced")}}</a></li>
+          <li class="pure-menu-item {% if tab == 'shared' %}pure-menu-selected{% endif %}"><a href="/library" class="pure-menu-link">{{_("Shared")}}</a></li>
+          <li class="pure-menu-item"><a href="/reader" class="pure-menu-link" target="_blank">{{_("Reader")}}</a></li>
+        </ul>
+        {% block menubar_right -%}
+        {% endblock -%}
+      </div>
     </div>
     {% endif -%}
     {% endblock -%}

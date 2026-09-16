@@ -107,12 +107,51 @@ function handleLanguageChange() {
 ///[start] my.html
 var show_menu_box = false;
 
-//注册页面点击事件，任意位置点击隐藏弹出来的ABC圆形按钮
+//注册页面点击事件，任意位置点击隐藏弹出来的ABC圆形按钮，并注册悬停弹出功能
 function RegisterHideHambClick() {
   $(document).click(function (e) {
     if (!$(e.target).closest('.hamburger-btn, .additional-btns').length) {
       $('.additional-btns').stop(true).hide();
     }
+  });
+  RegisterHambHover();
+}
+
+//注册鼠标悬浮在汉堡按钮上自动弹出/隐藏菜单功能
+function RegisterHambHover() {
+  var hideTimer = null;
+
+  $(document).off('.hambHover');
+
+  $(document).on('mouseenter.hambHover', '.hamburger-btn', function () {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    var $btns = $(this).next('.additional-btns');
+    $('.additional-btns').not($btns).stop(true, true).hide();
+    $btns.stop(true, true).fadeIn(150);
+  });
+
+  $(document).on('mouseleave.hambHover', '.hamburger-btn', function () {
+    var $btns = $(this).next('.additional-btns');
+    hideTimer = setTimeout(function () {
+      $btns.stop(true, true).fadeOut(150);
+    }, 300);
+  });
+
+  $(document).on('mouseenter.hambHover', '.additional-btns', function () {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  });
+
+  $(document).on('mouseleave.hambHover', '.additional-btns', function () {
+    var $btns = $(this);
+    hideTimer = setTimeout(function () {
+      $btns.stop(true, true).fadeOut(150);
+    }, 300);
   });
 }
 
@@ -189,43 +228,142 @@ function FetchBuiltinRecipesXml() {
   PopulateLibrary('');
 }
 
+var g_recipesPageSize = 20; // 每页默认显示20条
+var g_recipesCurrentPage = 1;
+var g_filteredRecipeIds = []; // 存储当前语种和搜索过滤后的全部recipe id列表
+
 //使用符合条件的recipe动态填充网页显示列表
 //参数 txt: 如果提供，则标题或描述里面有这个子字符串的才显示，用于搜索
 function PopulateLibrary(txt) {
-  var $div = $("#all_recipes");
-  $div.empty();
+  g_recipesCurrentPage = 1;
+  FilterAndRenderRecipes(txt, 1);
+}
+
+//过滤并渲染Recipe列表
+function FilterAndRenderRecipes(txt, page) {
+  g_filteredRecipeIds = [];
   var lang = $("#language_pick").val();
-  
-  //先添加自己上传的recipe
   txt = (txt || '').toLowerCase();
-  for (var idx = 0; idx < my_uploaded_recipes.length; idx++) {
-    var recipe = my_uploaded_recipes[idx];
-    var title = (recipe['title'] || '').toLowerCase();
-    var desc = (recipe['description'] || '').toLowerCase();
-    if (!lang || (recipe["language"] == lang)) {
-      if (!txt || (title.indexOf(txt) != -1) || (desc.indexOf(txt) != -1)) {
-        AppendRecipeToLibrary($div, recipe['id']);
+
+  // 1. 先添加自己上传的recipe
+  if (typeof my_uploaded_recipes !== 'undefined' && my_uploaded_recipes) {
+    for (var idx = 0; idx < my_uploaded_recipes.length; idx++) {
+      var recipe = my_uploaded_recipes[idx];
+      var title = (recipe['title'] || '').toLowerCase();
+      var desc = (recipe['description'] || '').toLowerCase();
+      if (!lang || (recipe["language"] == lang)) {
+        if (!txt || (title.indexOf(txt) != -1) || (desc.indexOf(txt) != -1)) {
+          g_filteredRecipeIds.push(recipe['id']);
+        }
       }
     }
   }
 
-  if (!lang) {
+  // 2. 再添加内置Recipe
+  if (lang && typeof all_builtin_recipes !== 'undefined' && all_builtin_recipes[lang]) {
+    var recipes = all_builtin_recipes[lang];
+    for (var idx = 0; idx < recipes.length; idx++) {
+      var recipe = recipes[idx];
+      var title = (recipe['title'] || '').toLowerCase();
+      var desc = (recipe['description'] || '').toLowerCase();
+      if (!txt || (title.indexOf(txt) != -1) || (desc.indexOf(txt) != -1)) {
+        g_filteredRecipeIds.push(recipe['id']);
+      }
+    }
+  }
+
+  RenderRecipePage(page || 1, false);
+}
+
+//渲染指定页码的Recipe列表与分页控件
+function RenderRecipePage(page, scrollToTop) {
+  var $div = $("#all_recipes");
+  $div.empty();
+  var $paging = $("#all_recipes_paging");
+  $paging.empty();
+
+  var total = g_filteredRecipeIds.length;
+  var maxPage = Math.ceil(total / g_recipesPageSize) || 1;
+  page = Math.max(1, Math.min(page, maxPage));
+  g_recipesCurrentPage = page;
+
+  if (total === 0) {
+    $div.html('<div class="notice-box" style="margin-top:10px;text-align:center;">' + (i18n.nothingHere || '暂无匹配的新闻源') + '</div>');
     return;
   }
 
-  //再添加内置Recipe
-  recipes = all_builtin_recipes[lang];
-  if (!recipes) {
-    return;
+  var startIdx = (page - 1) * g_recipesPageSize;
+  var endIdx = Math.min(startIdx + g_recipesPageSize, total);
+
+  for (var i = startIdx; i < endIdx; i++) {
+    AppendRecipeToLibrary($div, g_filteredRecipeIds[i]);
   }
-  for (var idx = 0; idx < recipes.length; idx++) {
-    var recipe = recipes[idx];
-    var title = (recipe['title'] || '').toLowerCase();
-    var desc = (recipe['description'] || '').toLowerCase();
-    if (!txt || (title.indexOf(txt) != -1) || (desc.indexOf(txt) != -1)) {
-      AppendRecipeToLibrary($div, recipe['id']);
+
+  // 重新绑定汉堡菜单悬停行为
+  RegisterHideHambClick();
+
+  // 渲染分页按钮控件
+  if (maxPage > 1) {
+    $paging.html(GenerateRecipePaginationHtml(page, maxPage, total));
+  } else if (total > 0) {
+    $paging.html('<div style="text-align:center;color:#94a3b8;font-size:12px;margin:16px 0;">' +
+      (typeof g_isZh !== 'undefined' && !g_isZh ? 'Total ' + total + ' recipes' : '共 ' + total + ' 条新闻源') +
+      '</div>');
+  }
+
+  if (scrollToTop) {
+    var target = document.getElementById('language_pick');
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({behavior: 'smooth', block: 'start'});
     }
   }
+}
+
+//跳转到指定新闻源页码
+function GoToRecipePage(page) {
+  RenderRecipePage(page, true);
+}
+
+//生成新闻源分页按钮组HTML
+function GenerateRecipePaginationHtml(currentPage, maxPage, totalCount) {
+  var prevPage = Math.max(1, currentPage - 1);
+  var nextPage = Math.min(maxPage, currentPage + 1);
+
+  var clsFirst = (currentPage <= 1) ? 'class="pgdisabled"' : 'onclick="GoToRecipePage(1)"';
+  var clsPrev = (currentPage <= 1) ? 'class="pgdisabled"' : 'onclick="GoToRecipePage(' + prevPage + ')"';
+  var clsNext = (currentPage >= maxPage) ? 'class="pgdisabled"' : 'onclick="GoToRecipePage(' + nextPage + ')"';
+  var clsLast = (currentPage >= maxPage) ? 'class="pgdisabled"' : 'onclick="GoToRecipePage(' + maxPage + ')"';
+
+  // 计算动态窗口页码（展示当前页附近最多5个页码）
+  var startPage = Math.max(1, currentPage - 2);
+  var endPage = Math.min(maxPage, currentPage + 2);
+  if (currentPage <= 3) {
+    endPage = Math.min(maxPage, 5);
+  }
+  if (currentPage >= maxPage - 2) {
+    startPage = Math.max(1, maxPage - 4);
+  }
+
+  var pagesHtml = [];
+  for (var p = startPage; p <= endPage; p++) {
+    if (p === currentPage) {
+      pagesHtml.push('<li class="active">' + p + '</li>');
+    } else {
+      pagesHtml.push('<li onclick="GoToRecipePage(' + p + ')">' + p + '</li>');
+    }
+  }
+
+  return '<div class="recipes-paging-container">' +
+    '<div class="recipes-paging-summary">共 ' + totalCount + ' 条新闻源（每页 ' + g_recipesPageSize + ' 条）</div>' +
+    '<ul class="paging">' +
+      '<li ' + clsFirst + ' title="首页">&laquo;</li>' +
+      '<li ' + clsPrev + ' title="上一页">&lsaquo;</li>' +
+      pagesHtml.join('') +
+      '<li ' + clsNext + ' title="下一页">&rsaquo;</li>' +
+      '<li ' + clsLast + ' title="末页">&raquo;</li>' +
+      '<li class="pageinfo">' + currentPage + '/' + maxPage + '</li>' +
+    '</ul>' +
+  '</div>';
 }
 
 //在Recipe库页面上添加一行信息
@@ -336,6 +474,7 @@ function PopulateMyCustomRss() {
     //汉堡按钮弹出菜单代码
     var fTpl = "{0}('{1}','{2}')";
     var fTplAll = "{0}(event,'{1}','{2}','{3}',{4})"; //id,title,url,isfulltext
+    hamb_arg.push({klass: 'btn-R', title: i18n.fetchAndRead, icon: 'icon-source', act: fTpl.format('FetchAndReadOnline', id, title)});
     hamb_arg.push({klass: 'btn-H', title: i18n.aiSummarizer, icon: 'icon-ai', act: "/summarizer/" + id.replace(':', '__')});
     hamb_arg.push({klass: 'btn-F', title: i18n.biTranslator, icon: 'icon-translate', act: "/translator/" + id.replace(':', '__')});
     hamb_arg.push({klass: 'btn-G', title: i18n.tts, icon: 'icon-tts', act: "/tts/" + id.replace(':', '__')});
@@ -401,6 +540,7 @@ function PopulateMySubscribed() {
     hamb_arg = [];
     var fTpl = "{0}('{1}','{2}')";
     //汉堡按钮弹出菜单代码
+    hamb_arg.push({klass: 'btn-R', title: i18n.fetchAndRead, icon: 'icon-source', act: fTpl.format('FetchAndReadOnline', recipe_id, title)});
     if (need_subs) {
         hamb_arg.push({klass: 'btn-C', title: i18n.subscriptionInfo, icon: 'icon-key', act: fTpl.format('AskForSubscriptionInfo', recipe_id, recipe.account)});
     }
@@ -419,6 +559,57 @@ function PopulateMySubscribed() {
     var $new_item = $(row_str.join(''));
     $div.append($new_item);
   }
+}
+
+//即刻抓取某个Recipe并在新窗口打开阅读器
+function FetchAndReadOnline(id, title) {
+  title = decodeJsSafeStr(title);
+  ShowLoadingDialog(i18n.fetchingAndBuilding || "正在抓取最新内容并排版，请稍候...");
+  $.ajax({
+    url: "/reader/fetch",
+    type: "POST",
+    data: {id: id},
+    timeout: 300000,
+    success: function (resp) {
+      HideLoadingDialog();
+      if (resp.status == "ok") {
+        window.open(resp.url, '_blank');
+      } else if (resp.status == "nonews") {
+        alert(resp.msg || i18n.noNewsFound || "当前源没有更新的内容。");
+      } else if (resp.status == i18n.loginRequired) {
+        window.location.href = '/login';
+      } else {
+        alert(resp.status || resp.msg || i18n.fetchFailed || "抓取排版失败。");
+      }
+    },
+    error: function (xhr, status, error) {
+      HideLoadingDialog();
+      alert('An error occurred: \n' + status + '\n' + error);
+    }
+  });
+}
+
+//显示全屏半透明等待遮罩
+function ShowLoadingDialog(tip) {
+  var $dlg = $('#ke-loading-mask');
+  if ($dlg.length === 0) {
+    var html = [
+      '<div id="ke-loading-mask" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;">',
+      '  <div style="background:#fff;padding:24px 32px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);text-align:center;max-width:85%;min-width:240px;">',
+      '    <div class="ke-spinner" style="width:40px;height:40px;margin:0 auto 16px;border:4px solid #e0e0e0;border-top:4px solid #5e72e4;border-radius:50%;animation:ke-spin 1s linear infinite;"></div>',
+      '    <div id="ke-loading-tip" style="font-size:15px;color:#333;font-weight:500;line-height:1.5;">' + (tip || '请稍候...') + '</div>',
+      '  </div>',
+      '</div>'
+    ].join('');
+    $('body').append(html);
+  } else {
+    $('#ke-loading-tip').text(tip || '请稍候...');
+    $dlg.show();
+  }
+}
+
+function HideLoadingDialog() {
+  $('#ke-loading-mask').hide();
 }
 
 //点击了订阅内置或上传的Recipe，发送ajax请求更新服务器信息

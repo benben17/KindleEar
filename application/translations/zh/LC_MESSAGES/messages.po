@@ -2377,9 +2377,15 @@ msgstr "此Recipe的网站登录信息已经保存。"
 msgid "The api key is required."
 msgstr "需要填写api key."
 
-#~ msgid "Src"
-#~ msgstr "源码"
+msgid "Fetch and read online"
+msgstr "即刻抓取并在线阅读"
 
-#~ msgid "Delete hook"
-#~ msgstr "删除钩子"
+msgid "Fetching latest content and generating ebook, please wait..."
+msgstr "正在抓取最新文章并生成排版，请稍候..."
+
+msgid "No new articles found in this feed."
+msgstr "当前源没有获取到新文章。"
+
+msgid "Failed to fetch and generate ebook."
+msgstr "抓取并生成电子书失败。"
 

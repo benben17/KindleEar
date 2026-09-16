@@ -3,6 +3,34 @@
 <title>{{ _("Feeds") }} - KindleEar</title>
 {% endblock -%}
 
+{% block header_container -%}
+{% endblock -%}
+
+{% block menubar_right -%}
+<ul class="pure-menu-list app-menu-right">
+  {% if session.get('userName') -%}
+  <li class="pure-menu-item"><a href="/admin" class="pure-menu-link">{{session.get('userName')}}</a></li>
+  <li class="pure-menu-item"><a href="/logout" class="pure-menu-link">{{_("Logout")}}</a></li>
+  {% endif -%}
+  <li class="pure-menu-item app-menu-lang">
+    {% set currLang = g._flask_babel.babel_locale | string %}
+    <select class="language-select app-menu-lang-select" id="languageSelect" onchange="handleLanguageChange()">
+      <option value="en" {% if currLang == 'en' %}selected="selected"{% endif %}>EN</option>
+      <option value="zh" {% if currLang == 'zh' %}selected="selected"{% endif %}>ZH</option>
+      <option value="de" {% if currLang == 'de' %}selected="selected"{% endif %}>DE</option>
+      <option value="es" {% if currLang == 'es' %}selected="selected"{% endif %}>ES</option>
+      <option value="fr" {% if currLang == 'fr' %}selected="selected"{% endif %}>FR</option>
+      <option value="it" {% if currLang == 'it' %}selected="selected"{% endif %}>IT</option>
+      <option value="ja" {% if currLang == 'ja' %}selected="selected"{% endif %}>JA</option>
+      <option value="ko" {% if currLang == 'ko' %}selected="selected"{% endif %}>KO</option>
+      <option value="pt" {% if currLang == 'pt' %}selected="selected"{% endif %}>PT</option>
+      <option value="ru" {% if currLang == 'ru' %}selected="selected"{% endif %}>RU</option>
+      <option value="tr" {% if currLang == 'tr' %}selected="selected"{% endif %}>TR</option>
+    </select>
+  </li>
+</ul>
+{% endblock -%}
+
 {% block bodytag -%}
 <body class="my-rss">
 {% endblock -%}
@@ -64,6 +92,7 @@
   <div id="all_recipes" class="box-list">
     <!-- 由脚本在这里填充数据 -->
   </div>
+  <div id="all_recipes_paging"></div>
   <div id="toast" class="toast">
     <i>&#10003; {{_("Subscription to selected recipe successful.")}}</i>
   </div>

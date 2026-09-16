@@ -22,10 +22,13 @@ from application.ke_utils import loc_exc_pos
 def convert_book(input_, input_fmt, user, options=None, output_fmt=''):
     output = io.BytesIO()
     output_fmt = output_fmt if output_fmt else user.book_cfg('type')
+    orig_options = options if isinstance(options, dict) else None
     options = ke_opts(user, options)
     plumber = Plumber(input_, output, input_fmt=input_fmt, output_fmt=output_fmt, options=options)
     try:
         plumber.run()
+        if (orig_options is not None) and hasattr(plumber, 'saved_book_dir'):
+            orig_options['saved_book_dir'] = plumber.saved_book_dir
         return output.getvalue()
     except:
         default_log.warning(loc_exc_pos('convert_book failed'))

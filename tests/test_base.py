@@ -11,6 +11,20 @@ SLOW_TESTS = bool(os.environ.get('KE_SLOW_TESTS'))
 #合并config.py配置信息到os.environ，如果对应环境变量存在，则不会覆盖，和main.py保持一致
 def set_env():
     import config
+    envFile = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+    if os.path.isfile(envFile):
+        try:
+            with open(envFile, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        k, v = line.split('=', 1)
+                        k, v = k.strip(), v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
     cfgMap = {}
     keys = ['APP_ID', 'APP_DOMAIN', 'SERVER_LOCATION', 'DATABASE_URL', 'TASK_QUEUE_SERVICE',
         'TASK_QUEUE_BROKER_URL', 'KE_TEMP_DIR', 'DOWNLOAD_THREAD_NUM', 'ALLOW_SIGNUP',

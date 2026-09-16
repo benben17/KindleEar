@@ -32,6 +32,20 @@ sys.path.insert(0, appDir)
 #合并config.py配置信息到os.environ，如果对应环境变量存在，则不会覆盖
 def set_env():
     import config
+    envFile = os.path.join(appDir, '.env')
+    if os.path.isfile(envFile):
+        try:
+            with open(envFile, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        k, v = line.split('=', 1)
+                        k, v = k.strip(), v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
     cfgMap = {}
     keys = ['APP_ID', 'APP_DOMAIN', 'SERVER_LOCATION', 'DATABASE_URL', 'TASK_QUEUE_SERVICE',
         'TASK_QUEUE_BROKER_URL', 'KE_TEMP_DIR', 'DOWNLOAD_THREAD_NUM', 'ALLOW_SIGNUP',
@@ -54,7 +68,8 @@ clogging.set_log_level(cfgMap.get('LOG_LEVEL'))
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == 'debug':
         default_log.setLevel(logging.DEBUG)
-        app.run(host='0.0.0.0', debug=False)
+        port = int(os.environ.get('PORT', 8000))
+        app.run(host='0.0.0.0', port=port, debug=False)
         return 0
     elif len(sys.argv) >= 3:
         act = sys.argv[1]

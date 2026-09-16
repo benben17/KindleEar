@@ -585,7 +585,8 @@ class Plumber:
     def save_oeb_if_need(self, oeb):
         user = self.opts.user #type:ignore
         oebDir = os.environ.get('EBOOK_SAVE_DIR')
-        if getattr(self.opts, 'dont_save_webshelf') or not (oebDir and ('local' in user.cfg('delivery_mode'))):
+        forceSave = getattr(self.opts, 'force_save_webshelf', False)
+        if getattr(self.opts, 'dont_save_webshelf') or not (oebDir and (forceSave or ('local' in user.cfg('delivery_mode')))):
             return
 
         #提取字符串开头的数字
@@ -595,9 +596,10 @@ class Plumber:
 
         dateDir = os.path.join(oebDir, user.name, user.local_time('%Y-%m-%d'))
         maxIdx = max([prefixNum(item) for item in os.listdir(dateDir)] + [0]) if os.path.exists(dateDir) else 0
-        title = oeb.metadata.title[0].value or 'Untitled'
+        title = oeb.metadata.title[0].value if (oeb.metadata.title and oeb.metadata.title[0].value) else 'Untitled'
         title = ascii_filename(title).replace(' ', '_')
-        bookDir = os.path.join(dateDir, f'{maxIdx + 1:03}_{title}')
+        relBookDir = f"{user.local_time('%Y-%m-%d')}/{maxIdx + 1:03}_{title}"
+        bookDir = os.path.join(oebDir, user.name, relBookDir)
         
         try:
             os.makedirs(bookDir)
@@ -608,6 +610,9 @@ class Plumber:
         self.dump_oeb(self.oeb, bookDir)
         size = get_directory_size(bookDir)
         save_delivery_log(user, title, size, status='ok', to=oebDir)
+        self.saved_book_dir = relBookDir
+        if hasattr(self.opts, 'saved_book_dir'):
+            self.opts.saved_book_dir = relBookDir
 
 regex_wizard_callback = None
 def set_regex_wizard_callback(f):

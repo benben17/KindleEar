@@ -36,6 +36,20 @@ builtins.__dict__['appBuildDate'] = appBuildDate
 import config
 
 def set_env():
+    envFile = os.path.join(appDir, '.env')
+    if os.path.isfile(envFile):
+        try:
+            with open(envFile, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        k, v = line.split('=', 1)
+                        k, v = k.strip(), v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
     cfgMap = {}
     keys = ['APP_ID', 'APP_DOMAIN', 'SERVER_LOCATION', 'DATABASE_URL', 'TASK_QUEUE_SERVICE',
         'TASK_QUEUE_BROKER_URL', 'KE_TEMP_DIR', 'DOWNLOAD_THREAD_NUM', 'ALLOW_SIGNUP',
@@ -44,6 +58,7 @@ def set_env():
         cfgMap[key] = os.getenv(key) if key in os.environ else getattr(config, key)
         if (key == 'APP_DOMAIN') and not cfgMap[key].startswith('http'):
             cfgMap[key] = 'https://' + cfgMap[key]
+        os.environ[key] = cfgMap[key]
     return cfgMap
     
 set_env()

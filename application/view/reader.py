@@ -58,23 +58,33 @@ def ReaderRoute():
     if not user:
         return redirect(url_for("bpLogin.Login", next=url_for('bpReader.ReaderRoute')))
 
-    oebDir = app.config['EBOOK_SAVE_DIR']
+    targetBook = request.args.get('book', '').strip()
+    initArticle = url_for('bpReader.ReaderArticleNoFoundRoute', tips='')
+    oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
     if oebDir:
         userDir = os.path.join(oebDir, user.name).replace('\\', '/')
-        oebBooks = GetSavedOebList(userDir)
+        savedList = GetSavedOebList(userDir)
         comicTitle = 'Nothing here'
+        if targetBook:
+            for day in savedList:
+                for b in day.get('books', []):
+                    if (b.get('bookDir') == targetBook) or (targetBook in b.get('bookDir', '')):
+                        if b.get('articles'):
+                            initArticle = url_for('bpReader.ReaderArticleRoute', path=b['articles'][0]['src'])
+                            break
+                if initArticle != url_for('bpReader.ReaderArticleNoFoundRoute', tips=''):
+                    break
+        oebBooks = json.dumps(savedList, ensure_ascii=False)
     else:
-        oebBooks = []
+        oebBooks = '[]'
         comicTitle = 'Not activated'
         
-    oebBooks = json.dumps(oebBooks, ensure_ascii=False)
-    initArticle = url_for('bpReader.ReaderArticleNoFoundRoute', tips='')
     params = user.cfg('reader_params')
     shareKey = user.share_links.get('key')
     docLang = 'Chinese' if get_locale().startswith('zh') else 'English'
     helpPage = f'https://cdhigh.github.io/KindleEar/{docLang}/reader.html'
     return render_template('reader.html', oebBooks=oebBooks, initArticle=initArticle, params=params,
-        shareKey=shareKey, comicTitle=comicTitle, helpPage=helpPage)
+        shareKey=shareKey, comicTitle=comicTitle, helpPage=helpPage, isZh=(1 if docLang == 'Chinese' else 0))
 
 #在线阅读器的404页面
 @bpReader.route("/reader/404", endpoint='ReaderArticleNoFoundRoute')
@@ -143,6 +153,84 @@ def ReaderDeletePost(user: KeUser, userDir: str):
                 except:
                     pass
     return {'status': 'ok'}
+
+#即刻抓取单个Recipe并保存到书架供在线阅读
+@bpReader.post("/reader/fetch", endpoint='ReaderFetchPost')
+@login_required(forAjax=True)
+def ReaderFetchPost(user: KeUser):
+    recipeId = request.form.get('id', '').strip()
+    if not recipeId:
+        return {'status': _("Some parameters are missing or wrong.")}
+
+    oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
+    if not oebDir or not os.path.isdir(oebDir):
+        return {'status': _("Online reading feature has not been activated yet.")}
+
+    recipeType, dbId = Recipe.type_and_id(recipeId)
+    if recipeType != 'builtin':
+        rec = Recipe.get_by_id_or_none(dbId)
+        if not rec or (rec.user != user.name and user.role != 'admin'):
+            return {'status': f"Recipe not found: {recipeId}"}
+
+    from ..work.worker import GetAllRecipeSrc
+    from calibre.web.feeds.recipes import compile_recipe
+    from build_ebook import convert_book
+    from urlopener import UrlOpener
+
+    UrlOpener.set_proxy(user.cfg('proxy'))
+    srcDict = GetAllRecipeSrc(user, [recipeId])
+    if not srcDict:
+        return {'status': f"Recipe not found: {recipeId}"}
+
+    title, (bked, recipeDb, src) = next(iter(srcDict.items()))
+    try:
+        rc = compile_recipe(src)
+    except Exception as e:
+        default_log.warning(f"Failed to compile recipe {title}: {e}")
+        return {'status': f"Failed to compile recipe: {e}"}
+
+    if not rc:
+        return {'status': _("Failed to compile recipe.")}
+
+    if rc.language in (None, '', 'und'):
+        rc.language = user.book_cfg('language')
+    elif rc.language:
+        rc.language = rc.language.replace('_', '-').lower()
+
+    rc.delivery_reason = 'manual'
+    userCss = user.get_extra_css()
+    rc.extra_css = f"{rc.extra_css}\n\n{userCss}" if rc.extra_css else userCss
+
+    if bked:
+        rc.translator = bked.translator.copy() if isinstance(bked.translator, dict) else {}
+        rc.tts = {}
+        rc.summarizer = bked.summarizer.copy() if isinstance(bked.summarizer, dict) else {}
+        if rc.needs_subscription:
+            rc.username = bked.account
+            rc.password = bked.password
+    else:
+        rc.translator = {}
+        rc.tts = {}
+        rc.summarizer = {}
+
+
+    options = {'force_save_webshelf': True}
+    try:
+        book = convert_book(rc, 'recipe', user, options=options)
+    except Exception as e:
+        default_log.warning(f"convert_book failed for {title}: {e}")
+        return {'status': f"Build ebook failed: {e}"}
+
+    savedBookDir = options.get('saved_book_dir')
+    if not savedBookDir or not book:
+        return {'status': 'nonews', 'msg': _("No new articles found in this feed.")}
+
+    return {
+        'status': 'ok',
+        'book': savedBookDir,
+        'title': title,
+        'url': url_for('bpReader.ReaderRoute', book=savedBookDir)
+    }
 
 #设置阅读器的默认参数
 @bpReader.post("/reader/settings", endpoint='ReaderSettingsPost')

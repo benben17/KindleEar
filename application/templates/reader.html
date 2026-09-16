@@ -4,12 +4,109 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{_('Reader')}} - KindleEar</title>
-  <link rel="stylesheet" type="text/css" href="/static/reader.css" />
+  <link rel="stylesheet" type="text/css" href="/static/reader.css?v={{g.version}}" />
 </head>
 <body>
   <div class="container" id="container">
+    <!-- 侧边栏折叠后的左侧快捷展开指示条 -->
+    <div class="sidebar-expand-tab" id="sidebar-expand-tab" title="{{_('Expand Sidebar')}}" onclick="toggleSidebar()">
+      <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="13 17 18 12 13 7"></polyline>
+        <polyline points="6 17 11 12 6 7"></polyline>
+      </svg>
+      <span>{{_('Books')}}</span>
+    </div>
+
+    <!-- 顶部导航栏 -->
+    <div class="reader-topbar" id="reader-topbar">
+      <div class="topbar-left">
+        <button id="sidebar-toggle-btn" class="topbar-btn" title="{{_('Toggle Sidebar')}}" onclick="toggleSidebar()">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <button class="topbar-btn topbar-dashboard-btn" id="topbar-dashboard-btn" title="{{_('Home / Recommended')}}" onclick="showDashboard()">
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span class="topbar-home-text">{{_('Feed Cards')}}</span>
+        </button>
+        <a href="/my" class="topbar-btn topbar-home-btn" title="{{_('Back to Bookshelf')}}">
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <span class="topbar-home-text">{{_('My Feeds')}}</span>
+        </a>
+        <div class="topbar-title-wrap">
+          <span class="topbar-book-badge" id="topbar-book-badge" style="display:none;"></span>
+          <span class="topbar-article-title" id="topbar-article-title">{{_('No article selected')}}</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn" title="{{_('Prev')}}" onclick="openPrevArticle()">
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <button class="topbar-btn" title="{{_('Next')}}" onclick="openNextArticle()">
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+        <button class="topbar-btn font-btn" title="{{_('Decrease font size')}}" onclick="decreaseFontSize()">A-</button>
+        <button class="topbar-btn font-btn" title="{{_('Increase font size')}}" onclick="increaseFontSize()">A+</button>
+        <button class="topbar-btn" id="topbar-dark-btn" title="{{_('Dark mode')}}" onclick="toggleDarkMode()">
+          <svg class="dark-icon-moon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg class="dark-icon-sun" style="display:none;" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
     <div class="content" id="content">
-      <iframe src="{{initArticle|safe}}" id="iframe" class="embedded-iframe" sandbox="allow-same-origin allow-scripts" scrolling="no" frameborder="0">Browser not compatible.</iframe>
+      <!-- 推荐与最近阅读卡片仪表盘（首次打开或点击主页时展示） -->
+      <div class="home-dashboard" id="home-dashboard">
+        <div class="dashboard-hero">
+          <div class="dashboard-hero-title">
+            <h2 id="dashboard-title">{{_('Reading Hub')}}</h2>
+            <p class="dashboard-hero-subtitle" id="dashboard-subtitle">{{_('Discover recent articles and pick up where you left off')}}</p>
+          </div>
+          <div class="dashboard-tabs">
+            <button class="dashboard-tab-btn active" id="tab-recent" onclick="switchDashboardTab('recent')">
+              <span>{{_('Latest Feeds')}}</span>
+              <span class="dashboard-tab-count" id="count-recent">0</span>
+            </button>
+            <button class="dashboard-tab-btn" id="tab-history" onclick="switchDashboardTab('history')">
+              <span>{{_('Reading History')}}</span>
+              <span class="dashboard-tab-count" id="count-history">0</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="dashboard-cards-container" id="dashboard-cards-container">
+          <!-- 卡片由JS动态填充 -->
+        </div>
+      </div>
+
+      <div class="reading-card" id="reading-card" style="display:none;">
+        <iframe src="{{initArticle|safe}}" id="iframe" class="embedded-iframe" sandbox="allow-same-origin allow-scripts" scrolling="no" frameborder="0">Browser not compatible.</iframe>
+      </div>
     </div>
     <div class="pos-indicator" id="pos-indicator"></div>
     <!-- 左上角的三角形查词模式显示 -->
@@ -26,15 +123,15 @@
       </div>
       <div class="tr-scrl-up-icon" id="tr-scrl-up-icon" onclick="dictScrollUp(event)">
         <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 20 20">
-          <path d="M 4.375 12.8125 L 10 7.1875 L 15.625 12.8125" stroke="black" stroke-width="1.875" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <path d="M 4.375 12.8125 L 10 7.1875 L 15.625 12.8125" stroke="currentColor" stroke-width="1.875" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
         </svg>
       </div>
       <div class="tr-scrl-down-icon" id="tr-scrl-down-icon" onclick="dictScrollDown(event)">
         <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 20 20">
-          <path d="M 4.375 7.1875 L 10 12.8125 L 15.625 7.1875" stroke="black" stroke-width="1.875" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <path d="M 4.375 7.1875 L 10 12.8125 L 15.625 7.1875" stroke="currentColor" stroke-width="1.875" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
         </svg>
       </div>
-      <div class="tr-close-icon" id="tr-close-icon" onclick="closeDictDialog(event)">X</div>
+      <div class="tr-close-icon" id="tr-close-icon" onclick="closeDictDialog(event)">✕</div>
       <div class="tr-word" id="tr-word"></div>
       <div class="tr-result-text">
         <div class="tr-text-container" id="tr-text-container">
@@ -44,7 +141,32 @@
     </div>
   </div>
 
+  <div class="nav-overlay" id="nav-overlay" onclick="navCloseNav()"></div>
+
   <div class="navbar" id="navbar">
+    <div class="nav-header" id="nav-header">
+      <div class="nav-header-left">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="nav-header-icon">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+        </svg>
+        <span class="nav-header-title">{{_('Online Bookshelf')}}</span>
+      </div>
+      <div class="nav-header-right">
+        <a href="/my" class="nav-header-btn" title="{{_('My Feeds')}}">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 14 4 9 9 4"></polyline>
+            <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+          </svg>
+        </a>
+        <button class="nav-header-btn nav-collapse-btn" id="nav-collapse-btn" title="{{_('Collapse Sidebar')}}" onclick="toggleSidebar()">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="11 19 4 12 11 5"></polyline>
+            <polyline points="18 19 11 12 18 5"></polyline>
+          </svg>
+        </button>
+      </div>
+    </div>
     <div class="nav-content" id="nav-content">
       <!-- 书籍列表在这里，由脚本填充 -->
     </div>
@@ -184,16 +306,24 @@
     var g_fontSize = {{params.get('fontSize', 1.0) | float}};
     var g_darkMode = {{params.get('darkMode', 0) | int}};
     var g_shareKey = "{{shareKey}}";
+    var g_isZh = {{ isZh | default(1) }};
     
     var i18n = {
       confirmDelete: "{{_('Confirm Deletion')|safe}}",
       areYouSureDelete: "{{_('Are you sure to delete?')|safe}}",
       selectAtleastOneItem: "{{_('Please select at least one item.')|safe}}",
       pushOk: "{{_('Pushed successfully.')|safe}}",
-      noReading: "{{_('There are currently no books or articles being read.')|safe}}"
+      noReading: "{{_('There are currently no books or articles being read.')|safe}}",
+      readingHub: "{{_('Reading Hub')|safe}}",
+      latestFeeds: "{{_('Latest Feeds')|safe}}",
+      readingHistory: "{{_('Reading History')|safe}}",
+      emptyHistory: "{{_('No reading history yet. Pick an article to start reading!')|safe}}",
+      emptyFeeds: "{{_('No downloaded feeds available. Please fetch feeds in My Feeds.')|safe}}",
+      readNow: "{{_('Read Now')|safe}}",
+      continueReading: "{{_('Continue')|safe}}"
     };
   </script>
-  <script src="/static/reader.js"></script>
+  <script src="/static/reader.js?v={{g.version}}"></script>
   {% endautoescape -%}
 </body>
 </html>
