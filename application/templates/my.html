@@ -85,8 +85,8 @@
     <div class=" pure-u-1-6 upload-recipe">
       <button class="upload-recipe-btn" title="{{_('Upload custom recipe')}}"onclick="OpenUploadRecipeDialog()"><i class="iconfont icon-upload"></i></button>
     </div>
-    <div class="pure-form">
-      <input type="text" name="search" id="search_recipe" class="pure-input-1 pure-input-rounded" placeholder="{{ _('Search')}}" />
+    <div class="pure-form search-recipe-wrap" style="flex: 1; min-width: 180px;">
+      <input type="search" name="search" id="search_recipe" class="pure-input-1 pure-input-rounded" placeholder="{{ _('Search')}}" oninput="OnSearchRecipeInput(this.value)" autocomplete="off" />
     </div>
   </div>
   <div id="all_recipes" class="box-list">
@@ -140,14 +140,24 @@ $(document).ready(function() {
   PopulateMyCustomRss(); //填充订阅区段
   PopulateMySubscribed();
   RegisterHideHambClick();
-  //在界面上选择了一项Recipe语种，将对应语种的recipe显示出来
+  //在界面上选择了一项Recipe语种，将对应语种的recipe显示出来（保留当前搜索词）
   $("#language_pick").on("change", function(){
-    PopulateLibrary('');
+    PopulateLibrary($("#search_recipe").val());
   });
 
-  //在指定语言里面搜索标题或描述
-  $("#search_recipe").on("input", function() {
-    PopulateLibrary($(this).val());
+  var searchTimer = null;
+  window.OnSearchRecipeInput = function(val) {
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+    }
+    searchTimer = setTimeout(function() {
+      PopulateLibrary(val);
+    }, 100);
+  };
+
+  //在指定语言里面搜索标题或描述，支持多种输入事件及清除触发
+  $("#search_recipe").on("input propertychange keyup search", function() {
+    OnSearchRecipeInput($(this).val());
   });
 
   {% if session.get('role') != 'admin' -%}

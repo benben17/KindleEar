@@ -157,13 +157,20 @@ function RegisterHambHover() {
 
 //连接服务器获取内置recipe列表，并按照语言建立一个字典all_builtin_recipes，字典键为语言，值为信息字典列表
 function FetchBuiltinRecipesXml() {
-  //添加上传的recipe的语言代码
   var langPick = $("#language_pick");
+  var allLangLabel = (BrowserLanguage() === 'zh') ? '全部语种' : 'All Languages';
+  if (langPick.find("option[value='']").length === 0) {
+    langPick.append($('<option value="">{0}</option>'.format(allLangLabel)));
+  }
+
+  //添加上传的recipe的语言代码
   my_uploaded_recipes.forEach(item => {
     var lang = item['language'];
     if (lang && !all_builtin_recipes[lang]) {
       all_builtin_recipes[lang] = [];
-      langPick.append($('<option value="{0}">{1}</option>'.format(lang, LanguageName(lang))));
+      if (langPick.find("option[value='" + lang + "']").length === 0) {
+        langPick.append($('<option value="{0}">{1}</option>'.format(lang, LanguageName(lang))));
+      }
     }
   });
 
@@ -197,35 +204,47 @@ function FetchBuiltinRecipesXml() {
 
       if (!all_builtin_recipes[lang]) {
         all_builtin_recipes[lang] = [];
-        langPick.append($('<option value="{0}">{1}</option>'.format(lang, LanguageName(lang))));
+        if (langPick.find("option[value='" + lang + "']").length === 0) {
+          langPick.append($('<option value="{0}">{1}</option>'.format(lang, LanguageName(lang))));
+        }
       }
-      all_builtin_recipes[lang].push({title: title, description: description, needs_subscription: subs, id: id});
+      all_builtin_recipes[lang].push({title: title, description: description, needs_subscription: subs, id: id, language: lang});
     });
 
-    //自动触发和用户浏览器同样语种的选项
+    //排序语言下拉框：全部语种置顶，当前浏览器语言和英语靠前
     var langItem;
     var langEnItem = langPick.find("option[value='en']");
     if (hasUserLangRss) {
       langItem = langPick.find("option[value='{0}']".format(userLang));
-      langItem.prependTo(langPick);
     } else if (hasEnRss) { //如果有英语则选择英语源
       langItem = langEnItem;
     } else { //最后只能选择第一个语言
-      langItem = $("#language_pick").children().first();
+      langItem = langPick.children().first();
     }
-    if (langItem) {
-      langItem.prependTo(langPick); //英语或浏览器语言置顶
-      langItem.attr("selected", true);
-      langItem.trigger('change');
-    }
-    if (langEnItem) {
+    if (langEnItem && langEnItem.length) {
       langEnItem.prependTo(langPick); //英语置顶
     }
+    if (langItem && langItem.length) {
+      langItem.prependTo(langPick); //浏览器语言置顶
+      langItem.prop("selected", true);
+    }
+    var allLangItem = langPick.find("option[value='']");
+    if (allLangItem && allLangItem.length) {
+      allLangItem.prependTo(langPick); //全部语种始终在最顶
+    }
+    if (langItem && langItem.length) {
+      langItem.prop("selected", true);
+    }
+
+    // 内置xml加载完毕后，使用当前输入框内容进行过滤渲染（不清除已输入的搜索词）
+    var curVal = $("#search_recipe").val() || '';
+    FilterAndRenderRecipes(curVal, 1);
   }).fail(function(jqXHR, textStatus, errorThrown) {
     console.log("Failed to fetch '/recipes/builtin_recipes.xml': " + errorThrown);
   });
 
-  PopulateLibrary('');
+  var curVal = $("#search_recipe").val() || '';
+  FilterAndRenderRecipes(curVal, 1);
 }
 
 var g_recipesPageSize = 20; // 每页默认显示20条
@@ -235,6 +254,9 @@ var g_filteredRecipeIds = []; // 存储当前语种和搜索过滤后的全部re
 //使用符合条件的recipe动态填充网页显示列表
 //参数 txt: 如果提供，则标题或描述里面有这个子字符串的才显示，用于搜索
 function PopulateLibrary(txt) {
+  if (typeof txt === 'undefined' || txt === null) {
+    txt = $("#search_recipe").val() || '';
+  }
   g_recipesCurrentPage = 1;
   FilterAndRenderRecipes(txt, 1);
 }
@@ -242,32 +264,93 @@ function PopulateLibrary(txt) {
 //过滤并渲染Recipe列表
 function FilterAndRenderRecipes(txt, page) {
   g_filteredRecipeIds = [];
+  var seenIds = {};
   var lang = $("#language_pick").val();
-  txt = (txt || '').toLowerCase();
+  txt = (txt || '').trim().toLowerCase();
+  var keywords = txt ? txt.split(/\s+/).filter(Boolean) : [];
 
-  // 1. 先添加自己上传的recipe
+  function addRecipeId(id) {
+    if (!seenIds[id]) {
+      seenIds[id] = true;
+      g_filteredRecipeIds.push(id);
+    }
+  }
+
+  function matchesQuery(recipe) {
+    if (keywords.length === 0) return true;
+    var title = (recipe['title'] || '').toLowerCase();
+    var desc = (recipe['description'] || '').toLowerCase();
+    var combined = title + ' ' + desc;
+    for (var k = 0; k < keywords.length; k++) {
+      if (combined.indexOf(keywords[k]) === -1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // 1. 先匹配上传的recipe
   if (typeof my_uploaded_recipes !== 'undefined' && my_uploaded_recipes) {
     for (var idx = 0; idx < my_uploaded_recipes.length; idx++) {
       var recipe = my_uploaded_recipes[idx];
-      var title = (recipe['title'] || '').toLowerCase();
-      var desc = (recipe['description'] || '').toLowerCase();
-      if (!lang || (recipe["language"] == lang)) {
-        if (!txt || (title.indexOf(txt) != -1) || (desc.indexOf(txt) != -1)) {
-          g_filteredRecipeIds.push(recipe['id']);
+      var rLang = (recipe['language'] || '').toLowerCase();
+      var langMatch = !lang || (rLang == (lang || '').toLowerCase());
+
+      if (keywords.length === 0) {
+        if (langMatch) {
+          addRecipeId(recipe['id']);
+        }
+      } else {
+        if (matchesQuery(recipe)) {
+          if (langMatch) {
+            addRecipeId(recipe['id']);
+          }
         }
       }
     }
   }
 
-  // 2. 再添加内置Recipe
+  // 2. 优先匹配当前选定语种的内置Recipe
   if (lang && typeof all_builtin_recipes !== 'undefined' && all_builtin_recipes[lang]) {
     var recipes = all_builtin_recipes[lang];
     for (var idx = 0; idx < recipes.length; idx++) {
       var recipe = recipes[idx];
-      var title = (recipe['title'] || '').toLowerCase();
-      var desc = (recipe['description'] || '').toLowerCase();
-      if (!txt || (title.indexOf(txt) != -1) || (desc.indexOf(txt) != -1)) {
-        g_filteredRecipeIds.push(recipe['id']);
+      if (matchesQuery(recipe)) {
+        addRecipeId(recipe['id']);
+      }
+    }
+  }
+
+  // 3. 如果选择了“全部语种”，或者用户输入了搜索词，则搜索/展示其他所有语种的内置Recipe
+  if (typeof all_builtin_recipes !== 'undefined') {
+    for (var otherLang in all_builtin_recipes) {
+      if (lang && otherLang === lang) {
+        continue;
+      }
+      var otherRecipes = all_builtin_recipes[otherLang];
+      if (!otherRecipes) continue;
+
+      for (var idx = 0; idx < otherRecipes.length; idx++) {
+        var recipe = otherRecipes[idx];
+        if (keywords.length === 0) {
+          if (!lang) {
+            addRecipeId(recipe['id']);
+          }
+        } else {
+          if (matchesQuery(recipe)) {
+            addRecipeId(recipe['id']);
+          }
+        }
+      }
+    }
+  }
+
+  // 4. 如果有搜索词，补充匹配未选语种的上传recipe
+  if (keywords.length > 0 && lang && typeof my_uploaded_recipes !== 'undefined' && my_uploaded_recipes) {
+    for (var idx = 0; idx < my_uploaded_recipes.length; idx++) {
+      var recipe = my_uploaded_recipes[idx];
+      if (matchesQuery(recipe)) {
+        addRecipeId(recipe['id']);
       }
     }
   }
@@ -377,6 +460,11 @@ function AppendRecipeToLibrary(div, id) {
   row_str.push(title);
   if (id.startsWith("upload:")) {
     row_str.push('<sup>{0}</sup>'.format(i18n.abbrUpl));
+  } else if (recipe.language) {
+    var curLang = $("#language_pick").val();
+    if (!curLang || (curLang && recipe.language.toLowerCase() !== curLang.toLowerCase())) {
+      row_str.push('<sup class="recipe-lang-tag">{0}</sup>'.format(recipe.language.toUpperCase()));
+    }
   }
   row_str.push('</div><div class="summaryRow">');
   row_str.push(recipe.description || '&nbsp;');

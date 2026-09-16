@@ -1264,6 +1264,28 @@ select[id="shared_rss_lang_pick"] {
     width: auto;
 }
 
+.search-recipe-wrap {
+    flex: 1;
+    min-width: 180px;
+}
+
+.search-recipe-wrap input {
+    width: 100% !important;
+    box-sizing: border-box;
+}
+
+.recipe-lang-tag {
+    background: #e2e8f0;
+    color: #475569;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    margin-left: 6px;
+    font-weight: 600;
+    display: inline-block;
+    vertical-align: middle;
+}
+
 .upload-recipe {
     display: flex;
     margin-left: 20px;
