@@ -2,12 +2,12 @@
 # -*- coding:utf-8 -*-
 #KindleEar在线RSS阅读器，为电子墨水屏进行了专门优化
 #Author: cdhigh <https://github.com/cdhigh>
-import os, json, shutil, time
+import os, json, shutil, time, re, html
 from functools import wraps
 from operator import itemgetter
 from lxml import etree #type:ignore
 from bs4 import BeautifulSoup
-from flask import Blueprint, render_template, session, request, send_from_directory, current_app as app
+from flask import Blueprint, render_template, session, request, send_from_directory, make_response, current_app as app
 from flask_babel import gettext as _
 from build_ebook import html_to_book
 from ..base_handler import *
@@ -15,6 +15,7 @@ from ..ke_utils import xml_escape, xml_unescape, str_to_int, str_to_float, str_t
 from ..back_end.db_models import *
 from ..back_end.send_mail_adpt import send_to_kindle
 from .settings import get_locale, LangMap
+from .vip import get_curated_media_list
 
 bpReader = Blueprint('bpReader', __name__)
 
@@ -55,90 +56,310 @@ def ReaderRoute():
     else:
         user = get_login_user()
 
-    if not user:
-        return redirect(url_for("bpLogin.Login", next=url_for('bpReader.ReaderRoute')))
+    is_guest = (user is None)
+    is_vip = user.is_vip() if user else False
+    vip_lvl = user.vip_level() if user else 'guest'
 
-    targetBook = request.args.get('book', '').strip()
-    initArticle = url_for('bpReader.ReaderArticleNoFoundRoute', tips='')
     oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
-    if oebDir:
-        userDir = os.path.join(oebDir, user.name).replace('\\', '/')
-        savedList = GetSavedOebList(userDir)
-        comicTitle = 'Nothing here'
-        if targetBook:
-            for day in savedList:
-                for b in day.get('books', []):
-                    if (b.get('bookDir') == targetBook) or (targetBook in b.get('bookDir', '')):
-                        if b.get('articles'):
-                            initArticle = url_for('bpReader.ReaderArticleRoute', path=b['articles'][0]['src'])
-                            break
-                if initArticle != url_for('bpReader.ReaderArticleNoFoundRoute', tips=''):
-                    break
-        oebBooks = json.dumps(savedList, ensure_ascii=False)
+    adminName = app.config.get('ADMIN_NAME', 'admin')
+
+    # 从管理员在 /my 已订内容中动态获取精选媒体池
+    curated_media = get_curated_media_list()
+    curated_titles = [m['title'] for m in curated_media]
+
+    if user:
+        subscribed_media = user.get_subscribed_media()
+        if not subscribed_media and curated_titles:
+            subscribed_media = curated_titles if is_vip else curated_titles[:2]
     else:
-        oebBooks = '[]'
+        subscribed_media = curated_titles[:1] if curated_titles else []
+
+    savedList = []
+    comicTitle = 'Nothing here'
+    if oebDir:
+        adminDir = os.path.join(oebDir, adminName).replace('\\', '/')
+        savedMap = {}
+        # 1. 扫描管理员目录（集中式公共报刊池）
+        if os.path.isdir(adminDir):
+            for day in GetSavedOebList(adminDir):
+                d = day['date']
+                savedMap[d] = {b['title']: b for b in day['books']}
+
+        # 2. 若普通用户有私有书籍，合并入书架
+        if user and user.name != adminName:
+            userDir = os.path.join(oebDir, user.name).replace('\\', '/')
+            if os.path.isdir(userDir):
+                for day in GetSavedOebList(userDir):
+                    d = day['date']
+                    if d not in savedMap:
+                        savedMap[d] = {}
+                    for b in day['books']:
+                        if b['title'] not in savedMap[d]:
+                            savedMap[d][b['title']] = b
+
+        for d in sorted(savedMap.keys(), reverse=True):
+            b_list = list(savedMap[d].values())
+            b_list.sort(key=lambda x: x['title'])
+            savedList.append({'date': d, 'books': b_list})
+    else:
         comicTitle = 'Not activated'
-        
-    params = user.cfg('reader_params')
-    shareKey = user.share_links.get('key')
+
+    # 权限控制与标题全量透出投影
+    targetBook = request.args.get('book', '').strip()
+    initArticle = ''
+    allowed_prefixes = []
+
+    guest_reads = session.get('guest_read_articles', [])
+    guest_reads_count = len(guest_reads)
+    guest_unlocked_count = 0
+    latest_date = savedList[0]['date'] if savedList else ''
+
+    projectedBooks = []
+    for day in savedList:
+        date = day['date']
+        is_latest_day = (date == latest_date)
+        day_books = []
+
+        for b in day['books']:
+            b_title = b['title']
+            is_subscribed = (b_title in subscribed_media) or (not subscribed_media)
+            if is_vip and (getattr(user, 'role', '') == 'admin' or (user and user.name == adminName)):
+                is_subscribed = True
+
+            projected_articles = []
+            for a_idx, art in enumerate(b['articles']):
+                art_src = art['src']
+                art_title = art['title']
+                art_dir = os.path.dirname(art_src)
+
+                is_locked = False
+                if is_vip:
+                    # VIP: 30天归档全量畅读
+                    if is_subscribed:
+                        is_locked = False
+                        allowed_prefixes.append(art_dir)
+                    else:
+                        is_locked = True
+                elif not is_guest:
+                    # 注册普通用户：仅最新一天，最多2个已选媒体，前10篇
+                    if is_latest_day and is_subscribed and a_idx < 10:
+                        is_locked = False
+                        allowed_prefixes.append(art_dir)
+                    else:
+                        is_locked = True
+                else:
+                    # 未登录访客：仅最新一天，全刊前5篇
+                    if is_latest_day and guest_unlocked_count < 5 and guest_reads_count < 5:
+                        is_locked = False
+                        allowed_prefixes.append(art_dir)
+                        guest_unlocked_count += 1
+                    else:
+                        is_locked = True
+
+                projected_articles.append({
+                    'title': art_title,
+                    'src': art_src if not is_locked else '',
+                    'real_src': art_src,
+                    'is_locked': is_locked,
+                })
+
+            day_books.append({
+                'title': b_title,
+                'language': b.get('language', 'en'),
+                'bookDir': b['bookDir'],
+                'articles': projected_articles,
+                'is_subscribed': is_subscribed,
+            })
+
+        projectedBooks.append({'date': date, 'books': day_books})
+
+    session['allowed_article_prefixes'] = list(set(allowed_prefixes))
+    session.modified = True
+
+    # 寻找首篇可阅读文章
+    if targetBook:
+        for day in projectedBooks:
+            for b in day.get('books', []):
+                if (b.get('bookDir') == targetBook) or (targetBook in b.get('bookDir', '')):
+                    for art in b.get('articles', []):
+                        if not art['is_locked'] and art['src']:
+                            initArticle = url_for('bpReader.ReaderArticleRoute', path=art['src'])
+                            break
+                if initArticle:
+                    break
+            if initArticle:
+                break
+
+    if not initArticle:
+        for day in projectedBooks:
+            for b in day.get('books', []):
+                for art in b.get('articles', []):
+                    if not art['is_locked'] and art['src']:
+                        initArticle = url_for('bpReader.ReaderArticleRoute', path=art['src'])
+                        break
+                if initArticle:
+                    break
+            if initArticle:
+                break
+
+    if not initArticle:
+        initArticle = url_for('bpReader.ReaderArticleNoFoundRoute', tips='')
+
+    params = (user.cfg('reader_params') if user else session.get('reader_params')) or {'fontSize': 1.0, 'allowLinks': 1, 'topleftDict': 1, 'darkMode': 0, 'inkMode': 0}
+    shareKey = user.share_links.get('key') if user else ''
     docLang = 'Chinese' if get_locale().startswith('zh') else 'English'
     helpPage = f'https://cdhigh.github.io/KindleEar/{docLang}/reader.html'
-    return render_template('reader.html', oebBooks=oebBooks, initArticle=initArticle, params=params,
-        shareKey=shareKey, comicTitle=comicTitle, helpPage=helpPage, isZh=(1 if docLang == 'Chinese' else 0))
+
+    return render_template('reader.html',
+        oebBooks=json.dumps(projectedBooks, ensure_ascii=False),
+        initArticle=initArticle,
+        params=params,
+        shareKey=shareKey,
+        comicTitle=comicTitle,
+        helpPage=helpPage,
+        isZh=(1 if docLang == 'Chinese' else 0),
+        user=user,
+        isGuest=(1 if is_guest else 0),
+        isVip=(1 if is_vip else 0),
+        vipLevel=vip_lvl,
+        subscribedMedia=json.dumps(subscribed_media, ensure_ascii=False),
+        allCuratedMedia=json.dumps(curated_media, ensure_ascii=False)
+    )
 
 #在线阅读器的404页面
 @bpReader.route("/reader/404", endpoint='ReaderArticleNoFoundRoute')
-@login_required()
-def ReaderArticleNoFoundRoute(user):
+def ReaderArticleNoFoundRoute():
     tips = request.args.get('tips')
-    oebDir = app.config['EBOOK_SAVE_DIR']
+    oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
     if not oebDir:
         tips = _("Online reading feature has not been activated yet.")
     elif tips is None:
         tips = _('The article is missing?')
-    params = user.cfg('reader_params')
+    user = get_login_user()
+    params = user.cfg('reader_params') if user else {}
     return render_template('reader_404.html', tips=tips.strip(), params=params)
 
-#获取文章或图像内容
+#获取文章或图像内容（带安全网关鉴权）
 @bpReader.route("/reader/article/<path:path>", endpoint='ReaderArticleRoute')
-@login_required()
-@reader_route_preprocess()
-def ReaderArticleRoute(path: str, user: KeUser, userDir: str):
-    return send_from_directory(userDir, path)
+def ReaderArticleRoute(path: str):
+    if '..' in path:
+        return ("Forbidden", 403)
 
-#推送一篇文章或一本书
+    oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
+    if not oebDir or not os.path.isdir(oebDir):
+        return render_template('reader_404.html', tips=_("Online reading feature has not been activated yet."), params={})
+
+    user = get_login_user()
+    is_vip = user.is_vip() if user else False
+    is_guest = (user is None)
+
+    is_html = path.endswith(('.html', '.htm'))
+    allowed_prefixes = session.get('allowed_article_prefixes', [])
+    in_whitelist = any(path.startswith(p) for p in allowed_prefixes)
+
+    if not is_vip:
+        if is_guest:
+            guest_reads = session.get('guest_read_articles', [])
+            if is_html:
+                if path not in guest_reads:
+                    if len(guest_reads) >= 5 or not in_whitelist:
+                        return render_article_lock_page(is_guest=True)
+                    guest_reads.append(path)
+                    session['guest_read_articles'] = guest_reads
+                    session.modified = True
+            else:
+                if not in_whitelist:
+                    return ("Forbidden", 403)
+        else: # Free user
+            if not in_whitelist:
+                if is_html:
+                    return render_article_lock_page(is_guest=False)
+                else:
+                    return ("Forbidden", 403)
+
+    adminName = app.config.get('ADMIN_NAME', 'admin')
+    adminDir = os.path.join(oebDir, adminName).replace('\\', '/')
+    userDir = os.path.join(oebDir, user.name).replace('\\', '/') if user else ''
+
+    targetDir = ''
+    if os.path.isfile(os.path.join(adminDir, path)):
+        targetDir = adminDir
+    elif userDir and os.path.isfile(os.path.join(userDir, path)):
+        targetDir = userDir
+
+    if not targetDir:
+        return render_template('reader_404.html', tips=_('The article is missing?'), params=user.cfg('reader_params') if user else {})
+
+    resp = send_from_directory(targetDir, path)
+    resp.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    return resp
+
+#推送一篇文章（仅限 VIP 会员，不支持整本书推送）
 @bpReader.post("/reader/push", endpoint='ReaderPushPost')
 @login_required(forAjax=True)
-@reader_route_preprocess(forAjax=True)
-def ReaderPushPost(user: KeUser, userDir: str):
+def ReaderPushPost(user: KeUser):
     type_ = request.form.get('type')
     src = request.form.get('src', '') #2024-05-30/KindleEar/feed_0/article_1/index.html
     title = request.form.get('title', '')
     language = request.form.get('language', '')
+
+    if type_ == 'book':
+        return {'status': _("Book download and export are disabled. Please read online.")}
+
+    if not user.is_vip():
+        return {'status': _("Pushing articles to Kindle is a VIP exclusive privilege. Please upgrade to VIP.")}
+
     if not ((type_ in ('book', 'article')) and ('/' in src) and title):
         return {'status': _("Some parameters are missing or wrong.")}
 
     title = xml_unescape(title)
-    msg = 'ok'
-    if type_ == 'book':
-        book = '/'.join(src.split('/')[:2])
-    elif type_ == 'article':
-        msg = PushSingleArticle(src, title, user, userDir, language)
+    oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
+    adminName = app.config.get('ADMIN_NAME', 'admin')
+    adminDir = os.path.join(oebDir, adminName).replace('\\', '/') if oebDir else ''
+    userDir = os.path.join(oebDir, user.name).replace('\\', '/') if oebDir else ''
+
+    targetDir = userDir if (userDir and os.path.isfile(os.path.join(userDir, src))) else adminDir
+    msg = PushSingleArticle(src, title, user, targetDir, language)
     return {'status': msg}
+
+#更新用户订阅的媒体清单
+@bpReader.post("/reader/subscribe_media", endpoint='ReaderSubscribeMediaPost')
+def ReaderSubscribeMediaPost():
+    user = get_login_user()
+    if not user:
+        return {'status': _("Please log in first to save your media subscriptions.")}
+
+    media_raw = request.form.get('media', '')
+    if media_raw:
+        media_list = [m.strip() for m in media_raw.split(',') if m.strip()]
+    else:
+        media_list = request.form.getlist('media[]')
+
+    saved = user.set_subscribed_media(media_list)
+    limit = 15 if user.is_vip() else 2
+    return {'status': 'ok', 'media': saved, 'limit': limit}
 
 #删除某些书籍
 @bpReader.post("/reader/delete", endpoint='ReaderDeletePost')
 @login_required(forAjax=True)
-@reader_route_preprocess(forAjax=True)
-def ReaderDeletePost(user: KeUser, userDir: str):
+def ReaderDeletePost(user: KeUser):
     books = request.form.get('books', '')
     if not books:
-        return _("Some parameters are missing or wrong.")
+        return {'status': _("Some parameters are missing or wrong.")}
+
+    oebDir = app.config.get('EBOOK_SAVE_DIR') or os.environ.get('EBOOK_SAVE_DIR')
+    if not oebDir:
+        return {'status': _("Online reading feature has not been activated yet.")}
+
+    adminName = app.config.get('ADMIN_NAME', 'admin')
+    userDir = os.path.join(oebDir, user.name).replace('\\', '/')
+    adminDir = os.path.join(oebDir, adminName).replace('\\', '/')
 
     for book in books.split('|'):
         if '..' in book: #防范文件系统路径攻击
             continue
-        bkDir = os.path.join(userDir, book)
+        targetBase = adminDir if (user.name == adminName or getattr(user, 'role', '') == 'admin') else userDir
+        bkDir = os.path.join(targetBase, book)
         dateDir = os.path.dirname(bkDir)
         if os.path.isdir(bkDir):
             try:
@@ -147,7 +368,7 @@ def ReaderDeletePost(user: KeUser, userDir: str):
                 default_log.warning(f'Failed to delete dir: {bkDir}: {e}')
 
             #如果目录为空，则将目录也一并删除
-            if not os.listdir(dateDir):
+            if os.path.isdir(dateDir) and not os.listdir(dateDir):
                 try:
                     shutil.rmtree(dateDir)
                 except:
@@ -234,27 +455,32 @@ def ReaderFetchPost(user: KeUser):
 
 #设置阅读器的默认参数
 @bpReader.post("/reader/settings", endpoint='ReaderSettingsPost')
-@login_required(forAjax=True)
-@reader_route_preprocess(forAjax=True)
-def ReaderSettingsPost(user: KeUser, userDir: str):
+def ReaderSettingsPost():
+    user = get_login_user()
     form = request.form
     fontSize = str_to_float(form.get('fontSize', '1.0'), 1.0)
     allowLinks = 1 if str_to_bool(form.get('allowLinks', 'true')) else 0
     topleftDict = 1 if str_to_bool(form.get('topleftDict', 'true')) else 0
     darkMode = 1 if str_to_bool(form.get('darkMode', 'true')) else 0
     inkMode = 1 if str_to_bool(form.get('inkMode', 'true')) else 0
-    params = user.cfg('reader_params')
-    params.update({'fontSize': fontSize, 'allowLinks': allowLinks, 'inkMode': inkMode, 
-        'topleftDict': topleftDict, 'darkMode': darkMode})
-    user.set_cfg('reader_params', params)
-    user.save()
+    if user:
+        params = user.cfg('reader_params')
+        params.update({'fontSize': fontSize, 'allowLinks': allowLinks, 'inkMode': inkMode, 
+            'topleftDict': topleftDict, 'darkMode': darkMode})
+        user.set_cfg('reader_params', params)
+        user.save()
+    else:
+        params = session.get('reader_params', {})
+        params.update({'fontSize': fontSize, 'allowLinks': allowLinks, 'inkMode': inkMode, 
+            'topleftDict': topleftDict, 'darkMode': darkMode})
+        session['reader_params'] = params
+        session.modified = True
     return {'status': 'ok'}
 
 #网页查词
 @bpReader.route("/reader/dict", endpoint='ReaderDictRoute')
-@login_required()
-@reader_route_preprocess()
-def ReaderDictRoute(user: KeUser, userDir: str):
+def ReaderDictRoute():
+    user = get_login_user()
     from dictionary import all_dict_engines
 
     #刷新词典列表，方便在不重启服务的情况下添加删除离线词典文件
@@ -267,9 +493,8 @@ def ReaderDictRoute(user: KeUser, userDir: str):
 
 #Api查词
 @bpReader.post("/reader/dict", endpoint='ReaderDictPost')
-@login_required(forAjax=True)
-@reader_route_preprocess(forAjax=True)
-def ReaderDictPost(user: KeUser, userDir: str):
+def ReaderDictPost():
+    user = get_login_user()
     from dictionary import CreateDictInst, GetDictDisplayName
     form = request.form
     word = form.get('word', '').strip()
@@ -278,7 +503,7 @@ def ReaderDictPost(user: KeUser, userDir: str):
         return {'status': _("The text is empty.")}
 
     #为一个字典列表[{language:,engine:,database:,}]
-    dictParams = user.cfg('reader_params').get('dicts', [])
+    dictParams = user.cfg('reader_params').get('dicts', []) if user else []
 
     #优先使用网页传递过来的引擎和数据库参数
     engine = form.get('engine')
@@ -338,9 +563,8 @@ def ReaderDictPost(user: KeUser, userDir: str):
 
 #获取词典外挂的CSS
 @bpReader.route("/reader/css/<path:path>", endpoint='ReaderDictCssRoute')
-@login_required()
-def ReaderDictCssRoute(path: str, user: KeUser):
-    dictDir = app.config['DICTIONARY_DIR']
+def ReaderDictCssRoute(path: str):
+    dictDir = app.config.get('DICTIONARY_DIR')
     return send_from_directory(dictDir, path) if dictDir and os.path.isdir(dictDir) else ''
 
 #构建Hunspell实例
@@ -466,25 +690,41 @@ def PushSingleArticle(src: str, title: str, user: KeUser, userDir: str, language
     else:
         return _('Failed to create ebook.')
 
-#获取当前用户保存的所有电子书，返回一个列表[{date:, books: [{title:, articles:[{title:, src:}],},...]}, ]
-def GetSavedOebList(userDir: str) -> list:
-    if not os.path.isdir(userDir):
+def clean_title(title: str) -> str:
+    if not title:
+        return ''
+    # 剥离 001_ 或 01_ 数字前缀
+    title = re.sub(r'^\d+_', '', title)
+    # HTML/XML 实体反转义（如 &amp; -> &, &#39; -> '）
+    title = html.unescape(title).strip()
+    return title
+
+#获取当前目录保存的所有电子书，返回一个列表[{date:, books: [{title:, articles:[{title:, src:}],},...]}, ]
+def GetSavedOebList(sourceDir: str) -> list:
+    if not os.path.isdir(sourceDir):
         return []
 
     ret = []
-    for date in sorted(os.listdir(userDir), reverse=True):
+    for date in sorted(os.listdir(sourceDir), reverse=True):
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+            continue
+        dateDir = os.path.join(sourceDir, date)
+        if not os.path.isdir(dateDir):
+            continue
         someDay = {'date': date, 'books': []}
-        dateDir = os.path.join(userDir, date)
         for book in sorted(os.listdir(dateDir), reverse=True):
             bookDir = os.path.join(dateDir, book)
+            if not os.path.isdir(bookDir):
+                continue
             opfFile = os.path.join(bookDir, 'content.opf')
             tocFile = os.path.join(bookDir, 'toc.ncx')
             prefix = f'{date}/{book}'
             meta = ExtractBookMeta(opfFile)
             articles = ExtractArticleList(tocFile, prefix)
             if meta and articles:
-                someDay['books'].append({'title': meta['title'], 'language': meta['language'], 
-                    'bookDir': prefix, 'articles': articles})
+                bTitle = meta.get('title') or clean_title(book)
+                someDay['books'].append({'title': bTitle, 'language': meta.get('language', 'en'), 
+                    'bookDir': prefix, 'rawBookDir': book, 'articles': articles})
         if someDay['books']:
             ret.append(someDay)
 
@@ -505,11 +745,11 @@ def ExtractBookMeta(opfFile: str) -> dict:
     root = tree.getroot()
     ret = {}
     title = root.find('.//{*}title')
-    if title is not None: #需要使用not None
-        ret['title'] = xml_escape(title.text)
+    if title is not None and title.text:
+        ret['title'] = clean_title(title.text)
     lang = root.find('.//{*}language')
-    if lang is not None:
-        ret['language'] = xml_escape(lang.text)
+    if lang is not None and lang.text:
+        ret['language'] = lang.text.strip()
     
     return ret
 
@@ -531,9 +771,60 @@ def ExtractArticleList(ncxFile: str, prefix: str) -> list:
     for nav in [e for e in navPoints if (len(e.findall('.//{*}navPoint')) == 0)]:
         text = nav.find('.//{*}text')
         src = nav.find('.//{*}content')
-        if text is not None and src is not None:  #这里必须使用None判断
-            text = (text.text or '').strip()
-            src = src.attrib.get('src', '')
-            if text and src:
-                ret.append({'title': text, 'src': f'{prefix}/{src}'})
+        if text is not None and src is not None:
+            raw_text = (text.text or '').strip()
+            article_src = src.attrib.get('src', '')
+            if raw_text and article_src:
+                ret.append({'title': clean_title(raw_text), 'src': f'{prefix}/{article_src}'})
     return ret
+
+#受限文章鉴权失败时渲染的优雅遮罩引导页
+def render_article_lock_page(is_guest: bool):
+    isZh = get_locale().startswith('zh')
+    if is_guest:
+        title = "免费试读已达上限 (5篇)" if isZh else "Free Trial Limit Reached (5 Articles)"
+        msg = ("您已免费体验阅读 5 篇精选报道。登录/注册账号即可解锁每日 10 篇额度；开通 VIP 畅享全部精选媒体无限畅读与 30 天历史期刊归档。"
+               if isZh else
+               "You have completed your 5-article free guest trial. Sign up or log in to unlock 10 articles daily, or upgrade to VIP for unlimited reading across all media and 30-day archives.")
+        btn1 = f'<a href="/login" target="_top" style="display:inline-block;padding:10px 22px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"立即登录" if isZh else "Log In"}</a>'
+        btn2 = f'<a href="/signup" target="_top" style="display:inline-block;padding:10px 22px;background:#10b981;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"免费注册" if isZh else "Sign Up"}</a>'
+        btn3 = f'<a href="/vip" target="_top" style="display:inline-block;padding:10px 22px;background:#f59e0b;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"了解 VIP" if isZh else "VIP Info"}</a>'
+        buttons = f'{btn1} {btn2} {btn3}'
+    else:
+        title = "VIP 会员专享深度报道" if isZh else "VIP Exclusive Article"
+        msg = ("本文章为 VIP 会员专享深度内容。升级 VIP 会员即可解锁路透社、彭博社、BBC 等全平台媒体，畅享无限篇幅阅读与近 30 天历史期刊归档。"
+               if isZh else
+               "This article is exclusive to VIP members. Upgrade to VIP to unlock unlimited reading across all curated media and 30-day archives.")
+        btn1 = f'<a href="/vip" target="_top" style="display:inline-block;padding:10px 24px;background:#f59e0b;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"立即升级 VIP" if isZh else "Upgrade to VIP"}</a>'
+        btn2 = f'<a href="/reader" target="_top" style="display:inline-block;padding:10px 20px;background:#6b7280;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"返回书架" if isZh else "Back to Reader"}</a>'
+        buttons = f'{btn1} {btn2}'
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>{title}</title>
+<style>
+body {{ margin:0; padding:40px 20px; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f8fafc; color:#1e293b; display:flex; align-items:center; justify-content:center; min-height:80vh; }}
+.card {{ max-width:520px; width:100%; background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:32px 24px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.06); }}
+.lock-icon {{ font-size:44px; margin-bottom:16px; display:inline-block; }}
+h2 {{ margin:0 0 14px; font-size:22px; color:#0f172a; }}
+p {{ font-size:15px; line-height:1.6; color:#64748b; margin:0 0 24px; }}
+.actions {{ display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="lock-icon">🔒</div>
+  <h2>{title}</h2>
+  <p>{msg}</p>
+  <div class="actions">
+    {buttons}
+  </div>
+</div>
+</body>
+</html>"""
+    resp = make_response(html_content, 403)
+    resp.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    return resp

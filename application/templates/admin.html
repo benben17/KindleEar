@@ -39,22 +39,64 @@
     </fieldset>
   </form>
   {% endif %}
-  <div class="pure-form">
+
+  <!-- VIP 卡密批量生成 -->
+  <form action="/admin/coupons/generate" method="POST" class="pure-form pure-form-aligned" style="margin-top:20px;">
+    <fieldset>
+      <legend>{{_("VIP Coupons Generator")}} <button type="submit" class="h3button">{{_("Generate")}}</button></legend>
+      <div class="pure-control-group">
+        <label>{{_("Coupons Stats")}}</label>
+        <span style="display:inline-block;padding-top:6px;color:#4b5563;">
+          {{_("Total")}}: <b>{{couponsStats.total}}</b> | 
+          {{_("Unused")}}: <b style="color:#10b981;">{{couponsStats.unused}}</b> | 
+          {{_("Used")}}: <b style="color:#ef4444;">{{couponsStats.used}}</b>
+        </span>
+      </div>
+      <div class="pure-control-group">
+        <label for="days">{{_("Validity Duration")}}</label>
+        <select class="pure-u-1 pure-u-sm-1-2" name="days" id="days">
+          <option value="30">30 {{_("Days")}} ({{_("Monthly Pass")}})</option>
+          <option value="90">90 {{_("Days")}} ({{_("Quarterly Pass")}})</option>
+          <option value="365">365 {{_("Days")}} ({{_("Annual Pass")}})</option>
+        </select>
+      </div>
+      <div class="pure-control-group">
+        <label for="count">{{_("Generate Quantity")}}</label>
+        <select class="pure-u-1 pure-u-sm-1-2" name="count" id="count">
+          <option value="1">1 {{_("Card")}}</option>
+          <option value="10" selected>10 {{_("Cards")}}</option>
+          <option value="50">50 {{_("Cards")}}</option>
+          <option value="100">100 {{_("Cards")}}</option>
+        </select>
+      </div>
+      {% if generatedCoupons %}
+      <div class="pure-control-group">
+        <label>{{_("Generated Coupons")}}</label>
+        <textarea class="pure-u-1 pure-u-sm-1-2" rows="6" readonly style="font-family:monospace;background:#f8fafc;" onclick="this.select();">{{generatedCoupons}}</textarea>
+        <aside style="margin-left:11em;color:#6b7280;font-size:12px;">{{_("Click to select all and copy. Import directly to Taobao/Afdian.")}}</aside>
+      </div>
+      {% endif %}
+    </fieldset>
+  </form>
+
+  <div class="pure-form" style="margin-top:20px;">
     <legend>{{_("Accounts")}} <a href='/account/add' class="h3button">{{_("Add")}}</a></legend>
     <table class="pure-table pure-table-horizontal usrtb" width="100%">
       <colgroup>
-        <col width="15%">
-        <col width="15%">
-        <col width="30%">
-        <col width="20%">
-        <col width="20%">
+        <col width="12%">
+        <col width="10%">
+        <col width="22%">
+        <col width="12%">
+        <col width="16%">
+        <col width="28%">
       </colgroup>
       <thead>
         <tr>
           <th>{{_("Username")}}</th>
           <th>{{_("AutoSend")}}</th>
           <th>{{_("Email")}}</th>
-          <th>{{_("Expiration")}}</th>
+          <th>{{_("VIP Status")}}</th>
+          <th>{{_("VIP Expire")}}</th>
           <th>{{_("Operation")}}</th>
         </tr>
       </thead>
@@ -64,25 +106,32 @@
           <td>{{other.name}}</td>
           <td>{{_("Yes") if other.cfg('enable_send') else _("No")}}</td>
           <td>{{other.cfg('email')}}</td>
-          {% if other.expiration_days == 0 -%}
-          <td>{{_("Never")}}</td>
-          {% elif other.expiration_days == 7 -%}
-          <td>{{_("7 Days")}}</td>
-          {% elif other.expiration_days == 30 -%}
-          <td>{{_("1 Month")}}</td>
-          {% elif other.expiration_days == 90 -%}
-          <td>{{_("3 Months")}}</td>
-          {% elif other.expiration_days == 180 -%}
-          <td>{{_("6 Months")}}</td>
-          {% elif other.expiration_days == 365 -%}
-          <td>{{_("1 Year")}}</td>
-          {% elif other.expiration_days == 730 -%}
-          <td>{{_("2 Years")}}</td>
-          {% else -%}
-          <td>{{other.expiration_days}} Days</td>
-          {% endif -%}
+          <td>
+            {% if other.name == adminName %}
+              <span style="background:#2563eb;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">Admin</span>
+            {% elif other.is_vip() %}
+              <span style="background:#f59e0b;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">VIP Pro</span>
+            {% else %}
+              <span style="background:#9ca3af;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">Free</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if other.name == adminName %}
+              {{_("Forever")}}
+            {% elif other.is_vip() %}
+              {{ other.custom.get('vip', {}).get('expire_time', '-') }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
           <td>
             <button class="additional-btn btn-B" title="{{_('Edit account')}}"><a href="/account/change/{{other.name}}"><i class="iconfont icon-edit"></i></a></button>
+            {% if other.name != adminName %}
+            <button type="button" class="additional-btn" style="background:#f59e0b;color:#fff;padding:2px 8px;border:none;border-radius:3px;font-size:12px;cursor:pointer;margin-left:4px;" title="{{_('+30 Days VIP')}}" onclick="modifyUserVip('{{other.name}}', 'add30')">+30d VIP</button>
+            {% if other.is_vip() %}
+            <button type="button" class="additional-btn" style="background:#ef4444;color:#fff;padding:2px 8px;border:none;border-radius:3px;font-size:12px;cursor:pointer;margin-left:4px;" title="{{_('Cancel VIP')}}" onclick="modifyUserVip('{{other.name}}', 'cancel')">Cancel VIP</button>
+            {% endif %}
+            {% endif %}
             {% if other.name == adminName -%}
             <button class="additional-btn btn-A additional-btn-disabled"><i class="iconfont icon-delete"></i></button>
             {% else -%}
@@ -109,6 +158,17 @@ function SetInviteCodesVisualbility() {
   } else {
     $('#invite_codes_group').show();
   }
+}
+function modifyUserVip(username, action) {
+  var msg = action === 'add30' ? '确定为该用户延长 30 天 VIP 权限吗？' : '确定取消该用户的 VIP 权限吗？';
+  if (!confirm(msg)) return;
+  $.post('/admin/user_vip', {username: username, action: action}, function(resp) {
+    if (resp.status === 'ok') {
+      location.reload();
+    } else {
+      alert(resp.status);
+    }
+  });
 }
 </script>
 {% endblock -%}

@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 #账号管理页面
 #Author: cdhigh <https://github.com/cdhigh>
-import datetime
+import datetime, json, uuid
 from operator import attrgetter
 from flask import Blueprint, request, url_for, render_template, redirect, current_app as app
 from flask_babel import gettext as _
@@ -12,6 +12,16 @@ from ..ke_utils import str_to_int, utcnow
 from .login import CreateAccountIfNotExist
 
 bpAdmin = Blueprint('bpAdmin', __name__)
+
+def get_coupons_stats():
+    try:
+        coupons = json.loads(AppInfo.get_value(AppInfo.vipCoupons, '{}'))
+    except Exception:
+        coupons = {}
+    total = len(coupons)
+    used = sum(1 for c in coupons.values() if c.get('used'))
+    unused = total - used
+    return {'total': total, 'used': used, 'unused': unused}
 
 # 账户管理页面
 @bpAdmin.route("/admin", endpoint='Admin')
@@ -25,7 +35,8 @@ def Admin(user: KeUser):
         signupType = AppInfo.get_value(AppInfo.signupType, 'oneTimeCode')
         inviteCodes = AppInfo.get_value(AppInfo.inviteCodes, '')
         return render_template('admin.html', title='Account', tab='admin', users=users, adminName=adminName,
-            mailSrv=mailSrv, signupType=signupType, inviteCodes=inviteCodes, tips='')
+            mailSrv=mailSrv, signupType=signupType, inviteCodes=inviteCodes, tips='',
+            couponsStats=get_coupons_stats(), generatedCoupons='')
     else:
         return render_template('change_password.html', tips='', tab='admin', user=user, shareKey=user.share_links.get('key'))
 
@@ -45,7 +56,98 @@ def AdminPost(user: KeUser):
     AppInfo.set_value(AppInfo.inviteCodes, inviteCodes)
     users = sorted(KeUser.get_all(), key=attrgetter('created_time'))
     return render_template('admin.html', title='Account', tab='admin', users=users, adminName=adminName,
-            mailSrv=mailSrv, signupType=signupType, inviteCodes=inviteCodes, tips=_("Settings Saved!"))
+            mailSrv=mailSrv, signupType=signupType, inviteCodes=inviteCodes, tips=_("Settings Saved!"),
+            couponsStats=get_coupons_stats(), generatedCoupons='')
+
+# 批量生成 VIP 卡密
+@bpAdmin.post("/admin/coupons/generate", endpoint='AdminCouponsGeneratePost')
+@login_required()
+def AdminCouponsGeneratePost(user: KeUser):
+    adminName = app.config['ADMIN_NAME']
+    if user.name != adminName:
+        return redirect(url_for('bpAdmin.Admin'))
+
+    count = str_to_int(request.form.get('count', '10'), 10)
+    days = str_to_int(request.form.get('days', '30'), 30)
+    count = max(1, min(count, 200))
+
+    try:
+        coupons = json.loads(AppInfo.get_value(AppInfo.vipCoupons, '{}'))
+    except Exception:
+        coupons = {}
+
+    prefix = f'KE-M{days}'
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    new_codes = []
+    for idx in range(count):
+        rand_str = uuid.uuid4().hex[:8].upper()
+        code = f'{prefix}-{rand_str[:4]}-{rand_str[4:]}'
+        while code in coupons:
+            rand_str = uuid.uuid4().hex[:8].upper()
+            code = f'{prefix}-{rand_str[:4]}-{rand_str[4:]}'
+        coupons[code] = {
+            'days': days,
+            'created_at': now_str,
+            'used': False,
+            'used_by': '',
+            'used_at': ''
+        }
+        new_codes.append(code)
+
+    AppInfo.set_value(AppInfo.vipCoupons, json.dumps(coupons))
+
+    users = sorted(KeUser.get_all(), key=attrgetter('created_time'))
+    mailSrv = AppInfo.get_value(AppInfo.newUserMailService, 'admin')
+    signupType = AppInfo.get_value(AppInfo.signupType, 'oneTimeCode')
+    inviteCodes = AppInfo.get_value(AppInfo.inviteCodes, '')
+    generated_text = '\n'.join(new_codes)
+    tips = _("Successfully generated {} VIP coupons!").format(count)
+
+    return render_template('admin.html', title='Account', tab='admin', users=users, adminName=adminName,
+        mailSrv=mailSrv, signupType=signupType, inviteCodes=inviteCodes, tips=tips,
+        couponsStats=get_coupons_stats(), generatedCoupons=generated_text)
+
+# 快速修改用户 VIP 权限
+@bpAdmin.post("/admin/user_vip", endpoint='AdminUserVipPost')
+@login_required(forAjax=True)
+def AdminUserVipPost(user: KeUser):
+    adminName = app.config['ADMIN_NAME']
+    if user.name != adminName:
+        return {'status': _("You do not have sufficient privileges.")}
+
+    target_name = request.form.get('username', '').strip()
+    action = request.form.get('action', '').strip()
+    target_user = KeUser.get_or_none(KeUser.name == target_name)
+    if not target_user:
+        return {'status': _("User not found.")}
+
+    vip_data = target_user.custom.get('vip', {})
+    now = datetime.datetime.now()
+
+    if action == 'add30':
+        base_dt = now
+        cur_expire_str = vip_data.get('expire_time')
+        if cur_expire_str:
+            try:
+                cur_dt = datetime.datetime.strptime(cur_expire_str, '%Y-%m-%d %H:%M:%S')
+                if cur_dt > now:
+                    base_dt = cur_dt
+            except Exception:
+                pass
+        new_expire = (base_dt + datetime.timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+        vip_data['level'] = 'pro'
+        vip_data['expire_time'] = new_expire
+        target_user.set_custom('vip', vip_data)
+        target_user.save()
+        return {'status': 'ok', 'level': 'pro', 'expire_time': new_expire}
+    elif action == 'cancel':
+        vip_data['level'] = 'free'
+        vip_data['expire_time'] = ''
+        target_user.set_custom('vip', vip_data)
+        target_user.save()
+        return {'status': 'ok', 'level': 'free', 'expire_time': ''}
+    else:
+        return {'status': 'Invalid action'}
 
 #管理员添加一个账号
 @bpAdmin.route("/account/add", endpoint='AdminAddAccount')

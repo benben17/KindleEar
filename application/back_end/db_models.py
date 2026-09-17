@@ -164,6 +164,49 @@ class KeUser(MyBaseModel): # kindleEar User
     def local_time(self, fmt=None):
         tm = datetime.datetime.now(tz=datetime.timezone(datetime.timedelta(hours=self.cfg('timezone'))))
         return tm.strftime(fmt) if fmt else tm
+
+    #商业化 VIP 判定与媒体订阅配额管理
+    def is_vip(self):
+        """判定是否为系统管理员或拥有有效 VIP 权限"""
+        if getattr(self, 'role', '') == 'admin' or self.name == os.environ.get('ADMIN_NAME', 'admin'):
+            return True
+        vip_data = self.custom.get('vip', {})
+        expire_str = vip_data.get('expire_time')
+        if not expire_str:
+            return False
+        try:
+            ex_dt = datetime.datetime.strptime(expire_str, '%Y-%m-%d %H:%M:%S')
+            return ex_dt > datetime.datetime.now()
+        except (ValueError, TypeError):
+            return False
+
+    def vip_level(self):
+        """返回用户的 VIP 等级: admin, pro, free"""
+        if getattr(self, 'role', '') == 'admin' or self.name == os.environ.get('ADMIN_NAME', 'admin'):
+            return 'admin'
+        return self.custom.get('vip', {}).get('level', 'pro') if self.is_vip() else 'free'
+
+    def get_subscribed_media(self):
+        """获取用户勾选订阅的精选媒体列表。未设置时返回空列表以供系统动态分配默认媒体"""
+        sub = self.custom.get('subscribed_media')
+        if isinstance(sub, list):
+            return sub
+        return []
+
+    def set_subscribed_media(self, media_list):
+        """设置用户订阅的媒体列表，普通用户上限为 2，VIP 用户上限为 15"""
+        if not isinstance(media_list, (list, tuple, set)):
+            media_list = []
+        clean_list = []
+        for m in media_list:
+            if isinstance(m, str) and m.strip() and (m.strip() not in clean_list):
+                clean_list.append(m.strip())
+        limit = 15 if self.is_vip() else 2
+        if len(clean_list) > limit:
+            clean_list = clean_list[:limit]
+        self.set_custom('subscribed_media', clean_list)
+        self.save()
+        return clean_list
         
 #用户的一些二进制内容，比如封面之类的
 class UserBlob(MyBaseModel):
@@ -314,6 +357,7 @@ class AppInfo(MyBaseModel):
     signupType = 'signupType'
     inviteCodes = 'inviteCodes'
     sharedRssLibraryUrl = 'sharedRssLibraryUrl'
+    vipCoupons = 'vipCoupons'
     
     @classmethod
     def get_value(cls, name, default=''):

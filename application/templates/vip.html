@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block titleTag -%}
+<title>{{ _("VIP Member Center") }} - KindleEar</title>
+{% endblock -%}
+
+{% block content -%}
+<div class="main" style="max-width: 800px; margin: 20px auto;">
+  <div id="vipNotice" class="notice-box" style="display:none; margin-bottom: 20px;"></div>
+
+  <!-- 会员状态卡片 -->
+  <div style="background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 24px; border-left: 6px solid {% if is_vip %}#10b981{% else %}#3b82f6{% endif %};">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+      <div>
+        <h2 style="margin: 0 0 8px 0; font-size: 22px;">
+          {{ _("Current Status") }}: 
+          {% if level == 'admin' %}
+            <span style="color: #8b5cf6;">{{ _("System Administrator") }}</span>
+          {% elif is_vip %}
+            <span style="color: #10b981;">VIP 会员 (PRO)</span>
+          {% else %}
+            <span style="color: #64748b;">免费普通用户 (Free)</span>
+          {% endif %}
+        </h2>
+        <p style="margin: 4px 0; color: #64748b; font-size: 14px;">
+          {% if is_vip and level != 'admin' %}
+            {{ _("Expiration Date") }}: <strong>{{ expire_time }}</strong>
+          {% elif level == 'admin' %}
+            {{ _("Administrator has unlimited permanent privileges.") }}
+          {% else %}
+            {{ _("Free tier: Max 2 media channels, daily latest 10 articles.") }}
+          {% endif %}
+        </p>
+      </div>
+      <div>
+        <span style="display: inline-block; padding: 6px 14px; background: #f1f5f9; border-radius: 20px; font-size: 14px; font-weight: bold; color: #334155;">
+          {{ _("Subscribed Media") }}: <span id="subscribedCount">{{ subscribed_media|length }}</span> / {{ max_media }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 卡密兑换激活 -->
+  <div style="background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 24px;">
+    <h3 style="margin-top: 0; font-size: 18px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px;">{{ _("Redeem VIP Coupon") }}</h3>
+    <p style="color: #64748b; font-size: 14px; margin-bottom: 16px;">
+      {{ _("Enter your 16-character coupon code to activate or extend your VIP membership.") }}
+    </p>
+    <div style="display: flex; gap: 12px; max-width: 500px;">
+      <input type="text" id="couponCode" placeholder="KE-M30-XXXX-XXXX" style="flex: 1; padding: 10px 14px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 6px; text-transform: uppercase;" />
+      <button type="button" class="pure-button pure-button-primary pure-input-rounded" onclick="redeemCoupon()" style="padding: 10px 20px;">{{ _("Redeem Now") }}</button>
+    </div>
+  </div>
+
+  <!-- 我的报刊订阅勾选 (源自管理员/my已订内容) -->
+  <div style="background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 16px;">
+      <h3 style="margin: 0; font-size: 18px;">{{ _("My Subscribed Media Channels") }}</h3>
+      <span style="font-size: 13px; color: #64748b;">
+        {% if is_vip %}
+          {{ _("VIP member: up to 15 channels") }}
+        {% else %}
+          {{ _("Free tier: select up to 2 channels") }}
+        {% endif %}
+      </span>
+    </div>
+
+    {% if all_media %}
+      <form id="mediaForm">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px;">
+          {% for m in all_media %}
+          <label style="display: block; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.borderColor='#3b82f6'" onmouseout="this.style.borderColor='#e2e8f0'">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" name="media" value="{{ m.title }}" {% if m.title in subscribed_media %}checked{% endif %} style="transform: scale(1.2);" onchange="checkMediaLimit(this)" />
+              <div>
+                <strong style="font-size: 15px; display: block; color: #1e293b;">{{ m.title }}</strong>
+                {% if m.desc %}<span style="font-size: 12px; color: #64748b; display: block; margin-top: 2px;">{{ m.desc[:40] }}</span>{% endif %}
+              </div>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+        <div style="text-align: right;">
+          <button type="button" class="pure-button pure-button-primary pure-input-rounded" onclick="saveMediaSubscription()">{{ _("Save Subscription") }}</button>
+        </div>
+      </form>
+    {% else %}
+      <p style="color: #94a3b8; font-size: 14px;">{{ _("No public media available yet. Please ask the administrator to subscribe to feeds in My Feeds.") }}</p>
+    {% endif %}
+  </div>
+
+  <!-- 会员权益说明 -->
+  <div style="background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+    <h3 style="margin-top: 0; font-size: 18px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px;">{{ _("Membership Privilege Comparison") }}</h3>
+    <table class="pure-table pure-table-horizontal" style="width: 100%; font-size: 14px; margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>{{ _("Privilege") }}</th>
+          <th>{{ _("Free Tier") }}</th>
+          <th><span style="color: #10b981; font-weight: bold;">VIP / PRO 会员</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{ _("Subscribed Media Count") }}</td>
+          <td>2 个基础媒体</td>
+          <td><strong>最多 15 个甚至全部精选媒体</strong></td>
+        </tr>
+        <tr>
+          <td>{{ _("Readable Articles Per Issue") }}</td>
+          <td>当天前 10 篇文章</td>
+          <td><strong>全刊全量深度文章无限畅读</strong></td>
+        </tr>
+        <tr>
+          <td>{{ _("Historical Archives") }}</td>
+          <td>仅限当天最新期次</td>
+          <td><strong>近 30 天历史报刊完整回溯</strong></td>
+        </tr>
+        <tr>
+          <td>{{ _("Kindle Push") }}</td>
+          <td>仅整本定时推送</td>
+          <td><strong>阅读器单篇即时推送到 Kindle</strong></td>
+        </tr>
+        <tr>
+          <td>{{ _("Reading Enhancement") }}</td>
+          <td>基础墨水屏排版</td>
+          <td><strong>AI 核心要点速读、双语对照、笔记同步</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var MAX_MEDIA = {{ max_media }};
+
+function showNotice(msg, isSuccess) {
+  var el = document.getElementById('vipNotice');
+  el.innerHTML = msg;
+  el.style.display = 'block';
+  el.style.background = isSuccess ? '#ecfdf5' : '#fef2f2';
+  el.style.color = isSuccess ? '#065f46' : '#991b1b';
+  el.style.border = '1px solid ' + (isSuccess ? '#a7f3d0' : '#fecaca');
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function checkMediaLimit(checkbox) {
+  var checked = document.querySelectorAll('input[name="media"]:checked');
+  if (checked.length > MAX_MEDIA) {
+    checkbox.checked = false;
+    alert("{{ _('Exceeded quota limit! Maximum allowed:') }} " + MAX_MEDIA);
+  }
+}
+
+function redeemCoupon() {
+  var code = document.getElementById('couponCode').value.trim();
+  if (!code) {
+    alert("{{ _('Please enter the coupon code.') }}");
+    return;
+  }
+  var formData = new FormData();
+  formData.append('code', code);
+  fetch('/vip/redeem', {method: 'POST', body: formData})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status === 'ok') {
+        showNotice(data.msg, true);
+        setTimeout(function() { location.reload(); }, 1500);
+      } else {
+        showNotice(data.status || "{{ _('Redemption failed.') }}", false);
+      }
+    })
+    .catch(function(e) {
+      showNotice("{{ _('Network error') }}: " + e, false);
+    });
+}
+
+function saveMediaSubscription() {
+  var checked = document.querySelectorAll('input[name="media"]:checked');
+  var list = [];
+  checked.forEach(function(c) { list.push(c.value); });
+  if (list.length > MAX_MEDIA) {
+    alert("{{ _('Exceeded quota limit!') }}");
+    return;
+  }
+  var formData = new FormData();
+  formData.append('media', list.join(','));
+  fetch('/vip/subscribe_media', {method: 'POST', body: formData})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status === 'ok') {
+        document.getElementById('subscribedCount').textContent = data.media.length;
+        showNotice("{{ _('Subscribed media channels updated successfully!') }}", true);
+      } else {
+        showNotice(data.status || "{{ _('Update failed.') }}", false);
+      }
+    })
+    .catch(function(e) {
+      showNotice("{{ _('Network error') }}: " + e, false);
+    });
+}
+</script>
+{% endblock -%}

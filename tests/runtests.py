@@ -100,13 +100,13 @@ def start_test(verbosity=1, failfast=0, testonly='', report=''):
     return 0
 
 TEST_MODULES = ['test_login', 'test_setting', 'test_admin', 'test_subscribe', 'test_adv', 
-     'test_logs', 'test_inbound_email'] #'test_share',
+     'test_logs', 'test_inbound_email', 'test_commercial_vip_reader'] #'test_share',
 
 if __name__ == '__main__':
     verbosity = 1 #Verbosity of output, 0 | 1 | 4
     failfast = 0 #Exit on first failure/error
     report = '' # '' | 'html' | 'console'
-    testonly = '' #module name, empty for testing all
+    testonly = sys.argv[1] if len(sys.argv) > 1 else '' #module name, empty for testing all
 
     os.environ['KE_TEST_VERBOSITY'] = str(verbosity)
     os.environ['KE_SLOW_TESTS'] = '1' #Run tests that may be slow

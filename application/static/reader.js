@@ -964,15 +964,17 @@ function populateBooks(expandLevel) {
           '<div class="nav-article">');
       for (var aIdx = 0; aIdx < articles.length; aIdx++) {
         var article = articles[aIdx];
-        if (!article || !article.src || !article.title) {
+        if (!article || !article.title) {
           continue;
         }
+        var isLocked = article.is_locked ? true : false;
         var sTitle = article.title.replace(/"/g, '&quot;');
-        var isRead = isArticleRead(article.src);
-        var readClass = isRead ? 'is-read' : 'is-unread';
+        var isRead = (!isLocked && article.src) ? isArticleRead(article.src) : false;
+        var readClass = isLocked ? 'is-locked' : (isRead ? 'is-read' : 'is-unread');
+        var lockIcon = isLocked ? '<span style="color:#eab308;margin-right:5px;font-size:12px;">🔒</span>' : articleSvgIcon();
         ostr.push(
-             '<div class="nav-title ' + readClass + '" data-src="' + article.src +'">' +
-                articleSvgIcon() +
+             '<div class="nav-title ' + readClass + '" data-src="' + (article.src || '') +'" data-locked="' + (isLocked ? '1' : '0') + '">' +
+                lockIcon +
                 '<span class="nav-title-text" title="' + sTitle + '">' + article.title + '</span>' +
               '</div>');
       }
@@ -1020,9 +1022,14 @@ function navClickEvent(event) {
   var navBook = nodeOrChild('nav-book', target, parent);
   var navTitle = nodeOrChild('nav-title', target, parent);
   if (navTitle) {
+    var isLocked = navTitle.getAttribute('data-locked') === '1';
     var src = navTitle.getAttribute('data-src');
     var span = navTitle.querySelector('.nav-title-text');
     var title = span ? span.textContent.trim() : '';
+    if (isLocked) {
+      showLockModal();
+      return;
+    }
     if (src && title) {
       openArticle({title: title, src: src});
     }
@@ -1033,25 +1040,21 @@ function navClickEvent(event) {
   }
 }
 
-//推送当前正在阅读的书籍
+//推送当前正在阅读的书籍（已彻底关闭）
 function pushCurrentBook() {
-  var art = g_currentArticle;
-  if (!isEmpty(art)) {
-    ajax_post('/reader/push', {type: 'book', src: art.src, title: art.title}, function (resp) {
-      if (resp.status == 'ok') {
-        alert(i18n.pushOk + '\n' + art.title);
-      } else {
-        alert(resp.status);
-      }
-    });
-  } else {
-    alert(i18n.noReading);
-  }
+  alert(typeof g_isZh !== 'undefined' && g_isZh ? '系统已关闭整本书籍下载与推送功能，请在线阅读！' : 'Book export/download is disabled. Please read online.');
   hidePopMenu();
 }
 
-//推送当前正在阅读的文章
+//推送当前正在阅读的文章（VIP 专属）
 function pushCurrentArticle() {
+  var isGuest = (typeof g_isGuest !== 'undefined') ? g_isGuest : 0;
+  var isVip = (typeof g_isVip !== 'undefined') ? g_isVip : 0;
+  if (isGuest || !isVip) {
+    showLockModal();
+    hidePopMenu();
+    return;
+  }
   var art = g_currentArticle;
   if (!isEmpty(art)) {
     var language = getBookLanguage(art);
@@ -1229,10 +1232,11 @@ function getLatestArticles(maxCount) {
       var articles = book.articles || [];
       for (var k = 0; k < articles.length; k++) {
         var art = articles[k];
-        if (art && art.title && art.src) {
+        if (art && art.title && (art.src || art.is_locked)) {
           list.push({
             title: art.title,
-            src: art.src,
+            src: art.src || '',
+            is_locked: art.is_locked ? true : false,
             bookTitle: book.title || '',
             date: dateStr
           });
@@ -1248,6 +1252,10 @@ function getLatestArticles(maxCount) {
 
 //点击卡片打开对应文章
 function openArticleFromCard(card) {
+  if (card.getAttribute('data-locked') === '1') {
+    showLockModal();
+    return;
+  }
   var src = card.getAttribute('data-src');
   var title = card.getAttribute('data-title');
   if (src && title) {
@@ -1307,19 +1315,23 @@ function renderDashboard(tab) {
     var item = list[i];
     var safeTitle = (item.title || '').replace(/"/g, '&quot;');
     var safeSrc = (item.src || '').replace(/"/g, '&quot;');
+    var isLocked = item.is_locked ? true : false;
     var bookBadge = item.bookTitle ? ('<span class="dashboard-card-badge" title="' + item.bookTitle.replace(/"/g, '&quot;') + '">' + item.bookTitle + '</span>') : '';
     var dateTag = item.date ? ('<span class="dashboard-card-date">' + item.date + '</span>') : '';
+    var lockBadge = isLocked ? ('<span class="dashboard-card-badge" style="background:#fef3c7;color:#d97706;border-color:#fde68a;">🔒 VIP</span>') : '';
 
-    var isRead = isArticleRead(item.src);
-    var readCardClass = isRead ? 'is-read' : 'is-unread';
-    html.push('<div class="dashboard-card ' + readCardClass + '" onclick="openArticleFromCard(this)" data-src="' + safeSrc + '" data-title="' + safeTitle + '">');
+    var isRead = (!isLocked && item.src) ? isArticleRead(item.src) : false;
+    var readCardClass = isLocked ? 'is-locked' : (isRead ? 'is-read' : 'is-unread');
+    var cardAction = isLocked ? (isZh ? '🔒 解锁阅读 →' : '🔒 Unlock →') : actionText;
+
+    html.push('<div class="dashboard-card ' + readCardClass + '" onclick="openArticleFromCard(this)" data-src="' + safeSrc + '" data-title="' + safeTitle + '" data-locked="' + (isLocked ? '1' : '0') + '">');
     html.push('  <div class="dashboard-card-top">');
-    html.push('    ' + bookBadge);
+    html.push('    ' + bookBadge + lockBadge);
     html.push('    ' + dateTag);
     html.push('  </div>');
     html.push('  <h3 class="dashboard-card-title" title="' + safeTitle + '">' + item.title + '</h3>');
     html.push('  <div class="dashboard-card-footer">');
-    html.push('    <span class="dashboard-card-action">' + actionText + '</span>');
+    html.push('    <span class="dashboard-card-action">' + cardAction + '</span>');
     html.push('  </div>');
     html.push('</div>');
   }
@@ -1644,6 +1656,182 @@ function initTargetBookFromUrl() {
   }
 }
 
+//显示权限锁定弹窗
+function showLockModal() {
+  var overlay = document.getElementById('lock-modal-overlay');
+  var titleTag = document.getElementById('lock-modal-title');
+  var descTag = document.getElementById('lock-modal-desc');
+  var actionsTag = document.getElementById('lock-modal-actions');
+  if (!overlay) return;
+
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var isGuest = (typeof g_isGuest !== 'undefined') ? g_isGuest : 0;
+
+  if (isGuest) {
+    titleTag.textContent = isZh ? '🔒 免费试读已达上限 (5篇)' : '🔒 Free Trial Limit Reached (5 Articles)';
+    descTag.textContent = isZh ? 
+      '您已免费体验阅读 5 篇精选报道。注册或登录 KindleEar 账号即可解锁每日 10 篇正文额度；开通 VIP 畅享全部精选媒体无限畅读与 30 天历史期刊归档。' :
+      'You have completed your 5-article free guest trial. Sign up or log in to unlock 10 articles daily, or upgrade to VIP for unlimited reading across all media and 30-day archives.';
+    actionsTag.innerHTML = 
+      '<a href="/login?next=/reader" class="reader-btn btn-primary" style="text-decoration:none;">' + (isZh ? '立即登录' : 'Log In') + '</a>' +
+      '<a href="/signup?next=/reader" class="reader-btn btn-secondary" style="text-decoration:none;">' + (isZh ? '免费注册' : 'Sign Up') + '</a>' +
+      '<a href="/vip" class="reader-btn btn-warning" style="text-decoration:none;">' + (isZh ? '开通 VIP' : 'Upgrade VIP') + '</a>';
+  } else {
+    titleTag.textContent = isZh ? '🔒 VIP 专属深度报道' : '🔒 VIP Exclusive Article';
+    descTag.textContent = isZh ? 
+      '本文章为 VIP 会员专享深度内容。升级 VIP 会员即可解锁路透社、彭博社、BBC 等全平台媒体，畅享全刊深度阅读及近 30 天历史期刊归档。' :
+      'This article is exclusive to VIP members. Upgrade to VIP to unlock unlimited reading across all curated media and 30-day archives.';
+    actionsTag.innerHTML = 
+      '<a href="/vip" class="reader-btn btn-warning" style="text-decoration:none;">' + (isZh ? '立即升级 VIP' : 'Upgrade to VIP') + '</a>' +
+      '<button class="reader-btn btn-secondary" onclick="closeLockModal(event)">' + (isZh ? '我知道了' : 'Close') + '</button>';
+  }
+
+  overlay.style.display = 'flex';
+}
+
+function closeLockModal(e) {
+  if (e) e.stopPropagation();
+  var overlay = document.getElementById('lock-modal-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+//显示媒体订阅定制弹窗
+function showMediaModal() {
+  var overlay = document.getElementById('media-modal-overlay');
+  var tipTag = document.getElementById('media-quota-tip');
+  var grid = document.getElementById('media-checkbox-grid');
+  if (!overlay || !grid) return;
+
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var isGuest = (typeof g_isGuest !== 'undefined') ? g_isGuest : 0;
+  var isVip = (typeof g_isVip !== 'undefined') ? g_isVip : 0;
+  var maxLimit = isVip ? 15 : 2;
+
+  if (isGuest) {
+    tipTag.innerHTML = isZh ? 
+      '未登录访客默认浏览官方推荐媒体。<b><a href="/login?next=/reader" style="color:#2563eb;">登录</a></b> 或 <b><a href="/vip" style="color:#f59e0b;">开通 VIP</a></b> 可自主勾选媒体！' :
+      'Guest visitors view recommended media. <b><a href="/login?next=/reader">Log in</a></b> or <b><a href="/vip">Upgrade VIP</a></b> to customize subscriptions!';
+  } else {
+    tipTag.innerHTML = isZh ? 
+      (isVip ? '👑 您是 <b>VIP 会员</b>，最多可自选 <b>15 个精选媒体</b> 畅读。' : '当前为免费版，最多可自选 <b>2 个精选媒体</b>。<b><a href="/vip" style="color:#f59e0b;">开通 VIP</a></b> 解锁全平台媒体！') :
+      (isVip ? '👑 You are a <b>VIP Member</b>. Select up to <b>15 media channels</b>.' : 'Free plan allows up to <b>2 media channels</b>. <b><a href="/vip">Upgrade VIP</a></b> for all channels!');
+  }
+
+  var allMedia = (typeof g_allCuratedMedia !== 'undefined') ? g_allCuratedMedia : [];
+  var userSubs = (typeof g_subscribedMedia !== 'undefined') ? g_subscribedMedia : [];
+
+  var html = [];
+  for (var i = 0; i < allMedia.length; i++) {
+    var m = allMedia[i];
+    var isChecked = userSubs.indexOf(m.title) >= 0;
+    html.push('<label class="media-checkbox-item">');
+    html.push('  <input type="checkbox" name="selected_media" value="' + m.title.replace(/"/g, '&quot;') + '" ' + (isChecked ? 'checked' : '') + ' onchange="onMediaCheckboxChange(this, ' + maxLimit + ')"/>');
+    html.push('  <div>');
+    html.push('    <div style="font-weight:600;font-size:14px;">' + m.title + '</div>');
+    if (m.desc) {
+      html.push('    <div style="font-size:12px;color:var(--text-secondary);">' + m.desc + '</div>');
+    }
+    html.push('  </div>');
+    html.push('</label>');
+  }
+
+  if (allMedia.length === 0) {
+    html.push('<p style="color:var(--text-secondary);">' + (isZh ? '管理员尚未在 /my 页面订阅任何公共媒体。' : 'No curated media booked by Admin yet.') + '</p>');
+  }
+
+  grid.innerHTML = html.join('');
+  overlay.style.display = 'flex';
+}
+
+function onMediaCheckboxChange(chk, maxLimit) {
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var isGuest = (typeof g_isGuest !== 'undefined') ? g_isGuest : 0;
+  if (isGuest) {
+    chk.checked = false;
+    alert(isZh ? '请先登录后再定制并保存您的个人报刊订阅！' : 'Please log in to customize and save your subscriptions!');
+    return;
+  }
+
+  var checkboxes = document.querySelectorAll('input[name="selected_media"]:checked');
+  if (checkboxes.length > maxLimit) {
+    chk.checked = false;
+    alert(isZh ? 
+      ('您当前会员等级最多只可选择 ' + maxLimit + ' 个媒体。升级 VIP 即可自选全部媒体！') : 
+      ('Your current plan allows at most ' + maxLimit + ' media channels. Upgrade to VIP to unlock all!'));
+  }
+}
+
+function closeMediaModal(e) {
+  if (e) e.stopPropagation();
+  var overlay = document.getElementById('media-modal-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function saveMediaSubscriptions() {
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var isGuest = (typeof g_isGuest !== 'undefined') ? g_isGuest : 0;
+  if (isGuest) {
+    alert(isZh ? '请先登录后再保存订阅！' : 'Please log in first!');
+    window.location.href = '/login?next=/reader';
+    return;
+  }
+
+  var checkboxes = document.querySelectorAll('input[name="selected_media"]:checked');
+  var selected = [];
+  for (var i = 0; i < checkboxes.length; i++) {
+    selected.push(checkboxes[i].value);
+  }
+
+  if (selected.length === 0) {
+    alert(isZh ? '请至少选择 1 个媒体！' : 'Please select at least 1 media!');
+    return;
+  }
+
+  ajax_post('/reader/subscribe_media', {media: selected.join(',')}, function(resp) {
+    if (resp.status === 'ok') {
+      closeMediaModal();
+      window.location.reload();
+    } else {
+      alert(resp.status);
+    }
+  });
+}
+
+// 防盗链与防下载安全保护
+function setupAntiDownloadProtection() {
+  document.addEventListener('contextmenu', function(e) {
+    var tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+    if (tag !== 'input' && tag !== 'textarea') {
+      e.preventDefault();
+    }
+  }, false);
+
+  window.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'p' || e.key === 'P')) {
+      e.preventDefault();
+    }
+  }, false);
+
+  var iframe = document.getElementById('iframe');
+  if (iframe) {
+    iframe.addEventListener('load', function() {
+      try {
+        var doc = iframe.contentDocument || iframe.contentWindow.document;
+        if (doc) {
+          doc.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+          }, false);
+          doc.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'p' || e.key === 'P')) {
+              e.preventDefault();
+            }
+          }, false);
+        }
+      } catch (err) {}
+    });
+  }
+}
+
 //文档加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
   if (!isMobile() && window.localStorage) {
@@ -1659,7 +1847,6 @@ document.addEventListener('DOMContentLoaded', function() {
   adjustContentHeight();
   window.addEventListener('resize', adjustContentHeight);
   document.addEventListener('keydown', documentKeyDownEvent);
-  //window.addEventListener('message', iFrameEvent);
   content.addEventListener('click', clickEvent);
   content.addEventListener('scroll', updatePosIndicator);
   navContent.addEventListener('click', navClickEvent);
@@ -1669,6 +1856,7 @@ document.addEventListener('DOMContentLoaded', function() {
   iframe.style.display = "none"; //加载完成后再显示
   iframe.src = iframe.src; //强制刷新一次，避免偶尔出现不能点击的情况
   setDarkModeStyle();
+  setupAntiDownloadProtection();
   var hasBookParam = window.location.search && window.location.search.match(/[?&]book=/);
   if (hasBookParam) {
     initTargetBookFromUrl();
