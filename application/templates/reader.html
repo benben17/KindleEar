@@ -366,8 +366,8 @@
     var g_isGuest = {{ isGuest | default(0) }};
     var g_isVip = {{ isVip | default(0) }};
     var g_vipLevel = "{{ vipLevel | default('guest') }}";
-    var g_subscribedMedia = {{ subscribedMedia | safe }};
-    var g_allCuratedMedia = {{ allCuratedMedia | safe }};
+    var g_subscribedMedia = {{ subscribedMedia | default('[]') | safe }};
+    var g_allCuratedMedia = {{ allCuratedMedia | default('[]') | safe }};
     var g_allowLinks = {{params.get('allowLinks', 0) | int}};
     var g_topleftDict = {{params.get('topleftDict', 1) | int}};
     var g_inkMode = {{params.get('inkMode', 1) | int}};

@@ -134,12 +134,8 @@ def ReaderRoute():
 
                 is_locked = False
                 if is_vip:
-                    # VIP: 30天归档全量畅读
-                    if is_subscribed:
-                        is_locked = False
-                        allowed_prefixes.append(art_dir)
-                    else:
-                        is_locked = True
+                    # VIP: 30天归档全量畅读（无需写入Session白名单，ReaderArticleRoute对VIP全量直通）
+                    is_locked = not is_subscribed
                 elif not is_guest:
                     # 注册普通用户：仅最新一天，最多2个已选媒体，前10篇
                     if is_latest_day and is_subscribed and a_idx < 10:
@@ -173,7 +169,10 @@ def ReaderRoute():
 
         projectedBooks.append({'date': date, 'books': day_books})
 
-    session['allowed_article_prefixes'] = list(set(allowed_prefixes))
+    if is_vip:
+        session.pop('allowed_article_prefixes', None)
+    else:
+        session['allowed_article_prefixes'] = list(set(allowed_prefixes))[:30]
     session.modified = True
 
     # 寻找首篇可阅读文章
