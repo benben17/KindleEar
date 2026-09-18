@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ _("Reader Account") }} - KindleEar</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-container {
+      max-width: 420px;
+      width: 100%;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+      border: 1px solid #e2e8f0;
+      overflow: hidden;
+    }
+    .auth-header {
+      padding: 32px 28px 20px 28px;
+      text-align: center;
+      background: #ffffff;
+    }
+    .brand-logo {
+      font-size: 32px;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    .brand-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+    .brand-desc {
+      font-size: 14px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .auth-tabs {
+      display: flex;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+    .auth-tab {
+      flex: 1;
+      text-align: center;
+      padding: 14px 10px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #64748b;
+      text-decoration: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .auth-tab.active {
+      color: #2563eb;
+      background: #ffffff;
+      border-bottom-color: #2563eb;
+    }
+    .auth-body {
+      padding: 28px;
+    }
+    .tips-box {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      line-height: 1.4;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 11px 14px;
+      font-size: 15px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      background: #f8fafc;
+    }
+    .form-input:focus {
+      border-color: #2563eb;
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      background: #2563eb;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      margin-top: 8px;
+    }
+    .submit-btn:hover {
+      background: #1d4ed8;
+    }
+    .auth-footer {
+      padding: 16px 28px 24px;
+      text-align: center;
+      font-size: 14px;
+      color: #64748b;
+      border-top: 1px solid #f1f5f9;
+      background: #f8fafc;
+    }
+    .auth-link {
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .auth-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-header">
+      <div class="brand-logo">📖</div>
+      <div class="brand-title">KindleEar Reader</div>
+      <div class="brand-desc">{{ _("Curated Media Reading Platform") }}</div>
+    </div>
+
+    <div class="auth-tabs">
+      <a href="{{ url_for('bpReaderAuth.ReaderLogin', next=next) }}" class="auth-tab {% if mode == 'login' %}active{% endif %}">
+        {{ _("Log In") }}
+      </a>
+      <a href="{{ url_for('bpReaderAuth.ReaderSignup', next=next) }}" class="auth-tab {% if mode == 'signup' %}active{% endif %}">
+        {{ _("Sign Up") }}
+      </a>
+    </div>
+
+    <div class="auth-body">
+      {% if tips %}
+      <div class="tips-box">{{ tips }}</div>
+      {% endif %}
+
+      {% if mode == 'login' %}
+      <form action="{{ url_for('bpReaderAuth.ReaderLoginPost') }}" method="POST">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <div class="form-group">
+          <label class="form-label">{{ _("Username / Account") }}</label>
+          <input type="text" name="username" class="form-input" placeholder="{{ _('Enter your username') }}" required autofocus />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ _("Password") }}</label>
+          <input type="password" name="password" class="form-input" placeholder="{{ _('Enter your password') }}" required />
+        </div>
+        <button type="submit" class="submit-btn">{{ _("Log In") }}</button>
+      </form>
+      {% else %}
+      <form action="{{ url_for('bpReaderAuth.ReaderSignupPost') }}" method="POST">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <div class="form-group">
+          <label class="form-label">{{ _("Username") }}</label>
+          <input type="text" name="username" class="form-input" placeholder="{{ _('Choose a username (3-30 chars)') }}" required autofocus />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ _("Password") }}</label>
+          <input type="password" name="password" class="form-input" placeholder="{{ _('Choose a password (min 4 chars)') }}" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ _("Confirm Password") }}</label>
+          <input type="password" name="confirm_password" class="form-input" placeholder="{{ _('Repeat your password') }}" required />
+        </div>
+        <button type="submit" class="submit-btn" style="background:#10b981;">{{ _("Create Account") }}</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="auth-footer">
+      <a href="{{ next or '/reader' }}" class="auth-link">← {{ _("Continue as Guest") }}</a>
+    </div>
+  </div>
+</body>
+</html>

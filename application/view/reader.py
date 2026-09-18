@@ -45,16 +45,23 @@ def ReaderRoute():
     
     #为了方便在墨水屏上使用，如果没有登录的话，可以使用查询字符串传递用户名和密码
     if userName and password:
-        user = KeUser.get_or_none(KeUser.name == userName)
-        if user and user.verify_password(password):
-            session['login'] = 1
-            session['userName'] = userName
-            session['role'] = 'admin' if userName == app.config['ADMIN_NAME'] else 'user'
+        r_u = ReaderUser.get_or_none(ReaderUser.name == userName)
+        if r_u and r_u.verify_password(password):
+            session['reader_login'] = 1
+            session['reader_username'] = userName
+            user = r_u
         else:
-            time.sleep(5) #防止暴力破解
-            user = None
+            ke_u = KeUser.get_or_none(KeUser.name == userName)
+            if ke_u and ke_u.verify_password(password):
+                session['login'] = 1
+                session['userName'] = userName
+                session['role'] = 'admin' if userName == app.config['ADMIN_NAME'] else 'user'
+                user = ke_u
+            else:
+                time.sleep(5) #防止暴力破解
+                user = None
     else:
-        user = get_login_user()
+        user = get_reader_user()
 
     is_guest = (user is None)
     is_vip = user.is_vip() if user else False
@@ -248,7 +255,7 @@ def ReaderArticleRoute(path: str):
     if not oebDir or not os.path.isdir(oebDir):
         return render_template('reader_404.html', tips=_("Online reading feature has not been activated yet."), params={})
 
-    user = get_login_user()
+    user = get_reader_user()
     is_vip = user.is_vip() if user else False
     is_guest = (user is None)
 
@@ -295,8 +302,11 @@ def ReaderArticleRoute(path: str):
 
 #推送一篇文章（仅限 VIP 会员，不支持整本书推送）
 @bpReader.post("/reader/push", endpoint='ReaderPushPost')
-@login_required(forAjax=True)
-def ReaderPushPost(user: KeUser):
+@reader_login_required(forAjax=True)
+def ReaderPushPost(user):
+    if isinstance(user, ReaderUser):
+        return {'status': _("Online reader accounts do not have email push configured. Please read online.")}
+
     type_ = request.form.get('type')
     src = request.form.get('src', '') #2024-05-30/KindleEar/feed_0/article_1/index.html
     title = request.form.get('title', '')
@@ -324,7 +334,7 @@ def ReaderPushPost(user: KeUser):
 #更新用户订阅的媒体清单
 @bpReader.post("/reader/subscribe_media", endpoint='ReaderSubscribeMediaPost')
 def ReaderSubscribeMediaPost():
-    user = get_login_user()
+    user = get_reader_user()
     if not user:
         return {'status': _("Please log in first to save your media subscriptions.")}
 
@@ -785,8 +795,8 @@ def render_article_lock_page(is_guest: bool):
         msg = ("您已免费体验阅读 5 篇精选报道。登录/注册账号即可解锁每日 10 篇额度；开通 VIP 畅享全部精选媒体无限畅读与 30 天历史期刊归档。"
                if isZh else
                "You have completed your 5-article free guest trial. Sign up or log in to unlock 10 articles daily, or upgrade to VIP for unlimited reading across all media and 30-day archives.")
-        btn1 = f'<a href="/login" target="_top" style="display:inline-block;padding:10px 22px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"立即登录" if isZh else "Log In"}</a>'
-        btn2 = f'<a href="/signup" target="_top" style="display:inline-block;padding:10px 22px;background:#10b981;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"免费注册" if isZh else "Sign Up"}</a>'
+        btn1 = f'<a href="/reader/login?next=/reader" target="_top" style="display:inline-block;padding:10px 22px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"立即登录" if isZh else "Log In"}</a>'
+        btn2 = f'<a href="/reader/signup?next=/reader" target="_top" style="display:inline-block;padding:10px 22px;background:#10b981;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"免费注册" if isZh else "Sign Up"}</a>'
         btn3 = f'<a href="/vip" target="_top" style="display:inline-block;padding:10px 22px;background:#f59e0b;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:6px;">{"了解 VIP" if isZh else "VIP Info"}</a>'
         buttons = f'{btn1} {btn2} {btn3}'
     else:

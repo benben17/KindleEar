@@ -1673,8 +1673,8 @@ function showLockModal() {
       '您已免费体验阅读 5 篇精选报道。注册或登录 KindleEar 账号即可解锁每日 10 篇正文额度；开通 VIP 畅享全部精选媒体无限畅读与 30 天历史期刊归档。' :
       'You have completed your 5-article free guest trial. Sign up or log in to unlock 10 articles daily, or upgrade to VIP for unlimited reading across all media and 30-day archives.';
     actionsTag.innerHTML = 
-      '<a href="/login?next=/reader" class="reader-btn btn-primary" style="text-decoration:none;">' + (isZh ? '立即登录' : 'Log In') + '</a>' +
-      '<a href="/signup?next=/reader" class="reader-btn btn-secondary" style="text-decoration:none;">' + (isZh ? '免费注册' : 'Sign Up') + '</a>' +
+      '<a href="/reader/login?next=/reader" class="reader-btn btn-primary" style="text-decoration:none;">' + (isZh ? '立即登录' : 'Log In') + '</a>' +
+      '<a href="/reader/signup?next=/reader" class="reader-btn btn-secondary" style="text-decoration:none;">' + (isZh ? '免费注册' : 'Sign Up') + '</a>' +
       '<a href="/vip" class="reader-btn btn-warning" style="text-decoration:none;">' + (isZh ? '开通 VIP' : 'Upgrade VIP') + '</a>';
   } else {
     titleTag.textContent = isZh ? '🔒 VIP 专属深度报道' : '🔒 VIP Exclusive Article';
@@ -1709,8 +1709,8 @@ function showMediaModal() {
 
   if (isGuest) {
     tipTag.innerHTML = isZh ? 
-      '未登录访客默认浏览官方推荐媒体。<b><a href="/login?next=/reader" style="color:#2563eb;">登录</a></b> 或 <b><a href="/vip" style="color:#f59e0b;">开通 VIP</a></b> 可自主勾选媒体！' :
-      'Guest visitors view recommended media. <b><a href="/login?next=/reader">Log in</a></b> or <b><a href="/vip">Upgrade VIP</a></b> to customize subscriptions!';
+      '未登录访客默认浏览官方推荐媒体。<b><a href="/reader/login?next=/reader" style="color:#2563eb;">登录</a></b> 或 <b><a href="/vip" style="color:#f59e0b;">开通 VIP</a></b> 可自主勾选媒体！' :
+      'Guest visitors view recommended media. <b><a href="/reader/login?next=/reader">Log in</a></b> or <b><a href="/vip">Upgrade VIP</a></b> to customize subscriptions!';
   } else {
     tipTag.innerHTML = isZh ? 
       (isVip ? '👑 您是 <b>VIP 会员</b>，最多可自选 <b>15 个精选媒体</b> 畅读。' : '当前为免费版，最多可自选 <b>2 个精选媒体</b>。<b><a href="/vip" style="color:#f59e0b;">开通 VIP</a></b> 解锁全平台媒体！') :
@@ -1772,7 +1772,7 @@ function saveMediaSubscriptions() {
   var isGuest = (typeof g_isGuest !== 'undefined') ? g_isGuest : 0;
   if (isGuest) {
     alert(isZh ? '请先登录后再保存订阅！' : 'Please log in first!');
-    window.location.href = '/login?next=/reader';
+    window.location.href = '/reader/login?next=/reader';
     return;
   }
 

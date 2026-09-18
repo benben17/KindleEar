@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 import datetime, json
 from test_base import *
-from application.back_end.db_models import KeUser, AppInfo
+from application.back_end.db_models import KeUser, ReaderUser, AppInfo
 from application.view.reader import clean_title
 
 class CommercialVipReaderTestCase(BaseTestCase):
@@ -104,3 +104,87 @@ class CommercialVipReaderTestCase(BaseTestCase):
         self.assertNotEqual(dup_resp.json.get('status'), 'ok')
 
         updated_user.delete_instance()
+
+    def test_reader_user_isolation_and_auth(self):
+        # 1. 测试 ReaderUser 专享注册
+        clean_reader = ReaderUser.get_or_none(ReaderUser.name == 'test_reader_isolated')
+        if clean_reader:
+            clean_reader.delete_instance()
+
+        keuser_count_before = KeUser.select().count()
+
+        signup_resp = self.client.post('/reader/signup', data={
+            'username': 'test_reader_isolated',
+            'password': 'reader_password_123',
+            'confirm_password': 'reader_password_123',
+            'next': '/reader'
+        }, follow_redirects=False)
+
+        self.assertEqual(signup_resp.status_code, 302)
+        self.assertIn('/reader', signup_resp.headers.get('Location', ''))
+
+        # 验证物理隔离：KeUser 表数量完全不变，新记录在 ReaderUser 表中
+        self.assertEqual(KeUser.select().count(), keuser_count_before)
+        r_user = ReaderUser.get_or_none(ReaderUser.name == 'test_reader_isolated')
+        self.assertIsNotNone(r_user)
+        self.assertTrue(r_user.verify_password('reader_password_123'))
+        self.assertFalse(r_user.is_vip())
+        self.assertEqual(r_user.vip_level(), 'free')
+
+        # 2. 验证权限阻断：ReaderUser 无法访问系统后台 /my，被拦截跳转至 /login
+        my_resp = self.client.get('/my')
+        self.assertEqual(my_resp.status_code, 302)
+        self.assertIn('/login', my_resp.headers.get('Location', ''))
+
+        # 3. 验证 ReaderUser 访问 /reader 与 /vip
+        reader_resp = self.client.get('/reader')
+        self.assertEqual(reader_resp.status_code, 200)
+        self.assertIn('g_isGuest = 0', reader_resp.text)
+        self.assertIn('g_isVip = 0', reader_resp.text)
+
+        vip_resp = self.client.get('/vip')
+        self.assertEqual(vip_resp.status_code, 200)
+
+        # 4. 验证 ReaderUser 兑换卡密并升级 VIP
+        with self.client.session_transaction() as sess:
+            sess['login'] = 1
+            sess['userName'] = 'admin'
+            sess['role'] = 'admin'
+        gen_resp = self.client.post('/admin/coupons/generate', data={'count': '1', 'days': '60'})
+        self.assertEqual(gen_resp.status_code, 200)
+        coupons = json.loads(AppInfo.get_value(AppInfo.vipCoupons, '{}'))
+        coupon_code = next(c for c, data in coupons.items() if not data.get('used'))
+
+        # 切换回 ReaderUser 会话
+        with self.client.session_transaction() as sess:
+            sess.pop('login', None)
+            sess.pop('userName', None)
+            sess.pop('role', None)
+            sess['reader_login'] = 1
+            sess['reader_username'] = 'test_reader_isolated'
+
+        redeem_resp = self.client.post('/vip/redeem', data={'code': coupon_code})
+        self.assertEqual(redeem_resp.status_code, 200)
+        self.assertEqual(redeem_resp.json.get('status'), 'ok')
+
+        # 刷新 ReaderUser 验证 VIP 状态
+        r_user_updated = ReaderUser.get_by_id(r_user.id)
+        self.assertTrue(r_user_updated.is_vip())
+        self.assertEqual(r_user_updated.vip_level(), 'pro')
+
+        # 5. 验证媒体配额升级 (VIP 可订阅至 15 个媒体)
+        fifteen_media = [f'Curated_{i}' for i in range(18)]
+        saved = r_user_updated.set_subscribed_media(fifteen_media)
+        self.assertEqual(len(saved), 15)
+
+        # 6. 测试 ReaderLogout
+        logout_resp = self.client.get('/reader/logout')
+        self.assertEqual(logout_resp.status_code, 302)
+        self.assertIn('/reader', logout_resp.headers.get('Location', ''))
+
+        # 登出后恢复为访客
+        guest_resp = self.client.get('/reader')
+        self.assertIn('g_isGuest = 1', guest_resp.text)
+
+        r_user_updated.delete_instance()
+

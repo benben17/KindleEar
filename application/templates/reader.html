@@ -56,16 +56,22 @@
       </div>
       <div class="topbar-right">
         {% if isGuest %}
-        <a href="/login?next=/reader" class="topbar-btn" style="color:#2563eb;font-weight:bold;text-decoration:none;padding:0 8px;" title="{{_('Log In')}}">
+        <a href="/reader/login?next=/reader" class="topbar-btn" style="color:#2563eb;font-weight:bold;text-decoration:none;padding:0 8px;" title="{{_('Log In')}}">
           <span>{{_('Log In')}}</span>
         </a>
         {% elif isVip %}
         <a href="/vip" class="topbar-btn" style="color:#f59e0b;font-weight:bold;text-decoration:none;padding:0 8px;" title="{{_('VIP Member')}}">
           <span>👑 VIP</span>
         </a>
+        <a href="/reader/logout" class="topbar-btn" style="color:#64748b;text-decoration:none;padding:0 6px;font-size:13px;" title="{{_('Logout')}}">
+          <span>{{ user.name if user else '' }} ({{_('Logout')}})</span>
+        </a>
         {% else %}
         <a href="/vip" class="topbar-btn" style="color:#f59e0b;font-weight:bold;text-decoration:none;padding:0 8px;" title="{{_('Upgrade to VIP')}}">
           <span>👑 {{_('Upgrade VIP')}}</span>
+        </a>
+        <a href="/reader/logout" class="topbar-btn" style="color:#64748b;text-decoration:none;padding:0 6px;font-size:13px;" title="{{_('Logout')}}">
+          <span>{{ user.name if user else '' }} ({{_('Logout')}})</span>
         </a>
         {% endif %}
         <button class="topbar-btn" title="{{_('Prev')}}" onclick="openPrevArticle()">

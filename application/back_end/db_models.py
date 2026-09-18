@@ -207,6 +207,72 @@ class KeUser(MyBaseModel): # kindleEar User
         self.set_custom('subscribed_media', clean_list)
         self.save()
         return clean_list
+
+# 在线阅读器专享收费/读者账户，与系统原生投递运维账户 KeUser 物理隔离
+class ReaderUser(MyBaseModel):
+    name = CharField(unique=True) # 读者登录名/手机/邮箱
+    passwd_hash = CharField()     # 密码哈希
+    vip_level_val = CharField(default='free') # 会员等级: 'free', 'pro'
+    vip_expire = DateTimeField(null=True) # VIP 到期时间戳
+    subscribed_media = JSONField(default=JSONField.list_default) # 媒体订阅清单
+    reader_params = JSONField(default=JSONField.dict_default) # 阅读器前端参数偏好
+    read_history = JSONField(default=JSONField.list_default) # 云端阅读历史
+    status = IntegerField(default=1) # 1: 正常, 0: 封禁
+    created_time = DateTimeField(default=utcnow)
+    last_login = DateTimeField(null=True)
+
+    def is_vip(self) -> bool:
+        """判定读者是否拥有未过期的 VIP 权限"""
+        if not self.vip_expire:
+            return False
+        try:
+            now = datetime.datetime.now()
+            if isinstance(self.vip_expire, str):
+                ex_dt = datetime.datetime.strptime(self.vip_expire, '%Y-%m-%d %H:%M:%S')
+            else:
+                ex_dt = self.vip_expire
+            return ex_dt > now
+        except (ValueError, TypeError):
+            return False
+
+    def vip_level(self) -> str:
+        return 'pro' if self.is_vip() else 'free'
+
+    def get_subscribed_media(self) -> list:
+        return list(self.subscribed_media or [])
+
+    def set_subscribed_media(self, media_list: list) -> list:
+        if not isinstance(media_list, (list, tuple, set)):
+            media_list = []
+        clean_list = []
+        for m in media_list:
+            if isinstance(m, str) and m.strip() and (m.strip() not in clean_list):
+                clean_list.append(m.strip())
+        limit = 15 if self.is_vip() else 2
+        clean_list = clean_list[:limit]
+        self.subscribed_media = clean_list
+        self.save()
+        return clean_list
+
+    def cfg(self, item, default=None):
+        if item == 'reader_params':
+            return self.reader_params or default or {}
+        return default
+
+    @property
+    def share_links(self):
+        return {}
+
+    @property
+    def role(self):
+        return 'reader'
+
+    def verify_password(self, password: str) -> bool:
+        return PasswordManager('ReaderUserSalt').verify_password(self.passwd_hash, password)
+
+    @classmethod
+    def create_password_hash(cls, password: str) -> str:
+        return PasswordManager('ReaderUserSalt').create_hash(password)
         
 #用户的一些二进制内容，比如封面之类的
 class UserBlob(MyBaseModel):
@@ -377,7 +443,7 @@ def create_database_tables():
         connect_database()
         if not AppInfo.table_exists():
             default_log.warning("Database not found. Creating new database...")
-            dbInstance.create_tables([KeUser, UserBlob, Recipe, BookedRecipe, DeliverLog, WhiteList,
+            dbInstance.create_tables([KeUser, ReaderUser, UserBlob, Recipe, BookedRecipe, DeliverLog, WhiteList,
                 SharedRss, SharedRssCategory, LastDelivered, InBox, AppInfo], safe=True)
             AppInfo.set_value(AppInfo.dbSchemaVersion, appVer)
             default_log.warning("Created database tables successfully.")
@@ -385,14 +451,14 @@ def create_database_tables():
             check_upgrade_database()
     except OperationalError:
         default_log.warning("Database not initialized or connection error. Creating new database...")
-        dbInstance.create_tables([KeUser, UserBlob, Recipe, BookedRecipe, DeliverLog, WhiteList,
+        dbInstance.create_tables([KeUser, ReaderUser, UserBlob, Recipe, BookedRecipe, DeliverLog, WhiteList,
             SharedRss, SharedRssCategory, LastDelivered, InBox, AppInfo], safe=True)
         AppInfo.set_value(AppInfo.dbSchemaVersion, appVer)
         default_log.warning("Created database tables successfully.")
 
 #删除所有表格的所有数据，相当于恢复出厂设置
 def delete_database_all_data():
-    for model in [KeUser, UserBlob, Recipe, BookedRecipe, DeliverLog, WhiteList,
+    for model in [KeUser, ReaderUser, UserBlob, Recipe, BookedRecipe, DeliverLog, WhiteList,
         SharedRss, SharedRssCategory, LastDelivered, InBox, AppInfo]:
         try:
             model.delete().execute()
@@ -403,6 +469,15 @@ def delete_database_all_data():
 def check_upgrade_database():
     if DB_CATEGORY != 'sql':
         return
+
+    # 检查并自动创建独立的读者专享用户表 ReaderUser
+    if not ReaderUser.table_exists():
+        default_log.warning("Upgrading database: Creating ReaderUser table...")
+        try:
+            dbInstance.create_tables([ReaderUser], safe=True)
+            default_log.warning("Created ReaderUser table successfully.")
+        except Exception as e:
+            default_log.warning(f"Error creating ReaderUser table: {e}")
 
     dbSchemaVersion = AppInfo.get_value(AppInfo.dbSchemaVersion, appVer)
     #v3.2版本给两个表添加了 summarizer 列

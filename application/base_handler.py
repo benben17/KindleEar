@@ -32,6 +32,38 @@ def login_required(forAjax=False):
 def get_login_user() -> Union[KeUser,None]:
     name = session.get('userName', '') if (session.get('login', '') == 1) else ''
     return KeUser.get_or_none(KeUser.name == name) if name else None
+
+#查询当前登录的阅读器读者用户 (ReaderUser)
+#若系统管理员/用户 (KeUser) 已登录后台，亦具备无缝兼容访问权限
+def get_reader_user() -> Union[ReaderUser, KeUser, None]:
+    # 1. 优先检查专属的读者会话 session['reader_login']
+    reader_name = session.get('reader_username', '') if (session.get('reader_login', '') == 1) else ''
+    if reader_name:
+        u = ReaderUser.get_or_none(ReaderUser.name == reader_name)
+        if u and getattr(u, 'status', 1) == 1:
+            return u
+    # 2. 兼容系统用户已在后台登录的情况
+    ke_user = get_login_user()
+    if ke_user:
+        return ke_user
+    return None
+
+#针对阅读器读者专属页面的登录鉴权装饰器
+def reader_login_required(forAjax=False):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            current_url = request.url
+            user = get_reader_user()
+            if user:
+                kwargs['user'] = user
+                return func(*args, **kwargs)
+            elif forAjax:
+                return {'status': 'need_login', 'msg': 'Please log in first.'}
+            else:
+                return redirect(url_for("bpReaderAuth.ReaderLogin", next=current_url))
+        return wrapper
+    return decorator
     
 #记录投递记录到数据库
 def save_delivery_log(user: KeUser, book: str, size: int, status='ok', to: Union[str,list,None]=None):
