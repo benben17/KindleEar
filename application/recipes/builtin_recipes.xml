@@ -1058,7 +1058,7 @@
   <recipe id="builtin:pressthink" title="PressThink" author="Darko Miletic" language="en" needs_subscription="no" description="Ghost of democracy in the media machine"/>
   <recipe id="builtin:german_gov" title="Pressemitteilungen der Bundesregierung" author="malfi" language="de" needs_subscription="no" description=""/>
   <recipe id="builtin:eu_commission" title="Pressemitteilungen der EU Kommission pro Politikbereich" author="malfi" language="de" needs_subscription="no" description=""/>
-  <recipe id="builtin:presse_portal" title="Presseportal DE" author="Volker Heggemann, VoHe" language="de" needs_subscription="no" description="Presseportal News Feed DE fetched: 2026-09-17"/>
+  <recipe id="builtin:presse_portal" title="Presseportal DE" author="Volker Heggemann, VoHe" language="de" needs_subscription="no" description="Presseportal News Feed DE fetched: 2026-09-18"/>
   <recipe id="builtin:private_eye" title="Private Eye Online" author="Martyn Pritchard &amp; Sophist-UK" language="en_GB" needs_subscription="no" description="Private Eye is a fortnightly British satirical and current affairs magazine, edited by Ian Hislop"/>
   <recipe id="builtin:pro_physik" title="Pro Physik" author="schuster, Armin Geller" language="de_DE" needs_subscription="no" description=""/>
   <recipe id="builtin:propublica" title="Pro Publica" author="kwetal" language="en" needs_subscription="no" description="Independent investigative journalism in the public interest."/>
@@ -1403,7 +1403,7 @@
   <recipe id="builtin:toi" title="The Times of India" author="Karthik" language="en_IN" needs_subscription="no" description="News from the Indian daily Times of India"/>
   <recipe id="builtin:thestar" title="The Toronto Star" author="Darko Miletic" language="en_CA" needs_subscription="no" description="Thestar.com is Canada's largest online news site. Stay current with our sports, business entertainment news and more from the Toronto Star and thestar.com"/>
   <recipe id="builtin:the_verge" title="The Verge" author="Krittika Goyal" language="en" needs_subscription="no" description=""/>
-  <recipe id="builtin:wsj" title="The Wall Street Journal" author="Kovid Goyal" language="en" needs_subscription="optional" description="News and current affairs"/>
+  <recipe id="builtin:wsj" title="The Wall Street Journal" author="unkn0wn" language="en_US" needs_subscription="no" description="The Print Edition of WSJ. The Wall Street Journal is your source for breaking news, business, markets, technology and world affairs."/>
   <recipe id="builtin:wsj_free" title="The Wall Street Journal (free)" author="Kovid Goyal" language="en" needs_subscription="no" description="News and current affairs"/>
   <recipe id="builtin:walrusmag" title="The Walrus Mag" author="Bert" language="en" needs_subscription="no" description="National general interest magazine about Canada and its place in the world"/>
   <recipe id="builtin:wash_post" title="The Washington Post" author="Darko Miletic, unkn0wn" language="en" needs_subscription="no" description="Leading source for news, video and opinion on politics, business, world and national news, science, travel, entertainment and more. Our local coverage includes reporting on education, crime, weather, traffic, real estate, jobs and cars for DC, Maryland and Virginia. Offering award-winning opinion writing, entertainment information and restaurant reviews."/>
