@@ -1296,7 +1296,7 @@ function renderDashboard(tab) {
   if (!list || list.length === 0) {
     var emptyText = (tab === 'history') ?
       (i18n.emptyHistory || (isZh ? '暂无阅读历史，点击上方最新内容即可开始阅读！' : 'No reading history yet. Pick an article to start reading!')) :
-      (i18n.emptyFeeds || (isZh ? '暂无订阅内容，请在我的订阅中先抓取或订阅源。' : 'No downloaded feeds available. Please fetch feeds in My Feeds.'));
+      (i18n.emptyFeeds || (isZh ? '暂无内容，请稍后再试。' : 'No downloaded content available.'));
     container.innerHTML = '<div class="dashboard-empty">' +
       '<div class="dashboard-empty-icon">' +
         '<svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
@@ -1736,7 +1736,7 @@ function showMediaModal() {
   }
 
   if (allMedia.length === 0) {
-    html.push('<p style="color:var(--text-secondary);">' + (isZh ? '管理员尚未在 /my 页面订阅任何公共媒体。' : 'No curated media booked by Admin yet.') + '</p>');
+    html.push('<p style="color:var(--text-secondary);">' + (isZh ? '暂无可选公共媒体。' : 'No curated media available.') + '</p>');
   }
 
   grid.innerHTML = html.join('');
