@@ -77,9 +77,9 @@ def ReaderRoute():
     if user:
         subscribed_media = user.get_subscribed_media()
         if not subscribed_media and curated_titles:
-            subscribed_media = curated_titles if is_vip else curated_titles[:2]
+            subscribed_media = curated_titles
     else:
-        subscribed_media = curated_titles[:1] if curated_titles else []
+        subscribed_media = curated_titles
 
     savedList = []
     comicTitle = 'Nothing here'
@@ -111,59 +111,27 @@ def ReaderRoute():
     else:
         comicTitle = 'Not activated'
 
-    # 权限控制与标题全量透出投影
+    # 全面开放阅读权限：全量透出所有书籍与文章，不锁定
     targetBook = request.args.get('book', '').strip()
     initArticle = ''
-    allowed_prefixes = []
-
-    guest_reads = session.get('guest_read_articles', [])
-    guest_reads_count = len(guest_reads)
-    guest_unlocked_count = 0
-    latest_date = savedList[0]['date'] if savedList else ''
 
     projectedBooks = []
     for day in savedList:
         date = day['date']
-        is_latest_day = (date == latest_date)
         day_books = []
 
         for b in day['books']:
             b_title = b['title']
-            is_subscribed = (b_title in subscribed_media) or (not subscribed_media)
-            if is_vip and (getattr(user, 'role', '') == 'admin' or (user and user.name == adminName)):
-                is_subscribed = True
-
             projected_articles = []
-            for a_idx, art in enumerate(b['articles']):
+            for art in b['articles']:
                 art_src = art['src']
                 art_title = art['title']
-                art_dir = os.path.dirname(art_src)
-
-                is_locked = False
-                if is_vip:
-                    # VIP: 30天归档全量畅读（无需写入Session白名单，ReaderArticleRoute对VIP全量直通）
-                    is_locked = not is_subscribed
-                elif not is_guest:
-                    # 注册普通用户：仅最新一天，最多2个已选媒体，前10篇
-                    if is_latest_day and is_subscribed and a_idx < 10:
-                        is_locked = False
-                        allowed_prefixes.append(art_dir)
-                    else:
-                        is_locked = True
-                else:
-                    # 未登录访客：仅最新一天，全刊前5篇
-                    if is_latest_day and guest_unlocked_count < 5 and guest_reads_count < 5:
-                        is_locked = False
-                        allowed_prefixes.append(art_dir)
-                        guest_unlocked_count += 1
-                    else:
-                        is_locked = True
 
                 projected_articles.append({
                     'title': art_title,
-                    'src': art_src if not is_locked else '',
+                    'src': art_src,
                     'real_src': art_src,
-                    'is_locked': is_locked,
+                    'is_locked': False,
                 })
 
             day_books.append({
@@ -171,15 +139,13 @@ def ReaderRoute():
                 'language': b.get('language', 'en'),
                 'bookDir': b['bookDir'],
                 'articles': projected_articles,
-                'is_subscribed': is_subscribed,
+                'is_subscribed': True,
             })
 
         projectedBooks.append({'date': date, 'books': day_books})
 
-    if is_vip:
-        session.pop('allowed_article_prefixes', None)
-    else:
-        session['allowed_article_prefixes'] = list(set(allowed_prefixes))[:30]
+    session.pop('allowed_article_prefixes', None)
+    session.pop('guest_read_articles', None)
     session.modified = True
 
     # 寻找首篇可阅读文章
@@ -256,32 +222,6 @@ def ReaderArticleRoute(path: str):
         return render_template('reader_404.html', tips=_("Online reading feature has not been activated yet."), params={})
 
     user = get_reader_user()
-    is_vip = user.is_vip() if user else False
-    is_guest = (user is None)
-
-    is_html = path.endswith(('.html', '.htm'))
-    allowed_prefixes = session.get('allowed_article_prefixes', [])
-    in_whitelist = any(path.startswith(p) for p in allowed_prefixes)
-
-    if not is_vip:
-        if is_guest:
-            guest_reads = session.get('guest_read_articles', [])
-            if is_html:
-                if path not in guest_reads:
-                    if len(guest_reads) >= 5 or not in_whitelist:
-                        return render_article_lock_page(is_guest=True)
-                    guest_reads.append(path)
-                    session['guest_read_articles'] = guest_reads
-                    session.modified = True
-            else:
-                if not in_whitelist:
-                    return ("Forbidden", 403)
-        else: # Free user
-            if not in_whitelist:
-                if is_html:
-                    return render_article_lock_page(is_guest=False)
-                else:
-                    return ("Forbidden", 403)
 
     adminName = app.config.get('ADMIN_NAME', 'admin')
     adminDir = os.path.join(oebDir, adminName).replace('\\', '/')

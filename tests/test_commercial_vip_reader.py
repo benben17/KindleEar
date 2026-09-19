@@ -52,11 +52,16 @@ class CommercialVipReaderTestCase(BaseTestCase):
         user.delete_instance()
 
     def test_guest_reader_access(self):
-        # 访客无需登录即可访问 /reader
+        # 访客无需登录即可访问 /reader，且全部开放阅读权限，无锁定内容
         resp = self.client.get('/reader')
         self.assertEqual(resp.status_code, 200)
         self.assertIn('Reader', resp.text)
         self.assertIn('g_isGuest = 1', resp.text)
+        self.assertNotIn('"is_locked": true', resp.text)
+
+        # 验证目录穿越拦截安全性
+        resp_traversal = self.client.get('/reader/article/../../etc/passwd')
+        self.assertEqual(resp_traversal.status_code, 403)
 
     def test_vip_coupon_generation_and_redemption(self):
         # 模拟管理员登录批量生成卡密
