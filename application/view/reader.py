@@ -5,7 +5,7 @@
 import os, json, shutil, time, re, html
 from functools import wraps
 from operator import itemgetter
-from lxml import etree #type:ignore
+from lxml import etree, html as lxml_html #type:ignore
 from bs4 import BeautifulSoup
 from flask import Blueprint, render_template, session, request, send_from_directory, make_response, current_app as app
 from flask_babel import gettext as _
@@ -132,6 +132,7 @@ def ReaderRoute():
                     'src': art_src,
                     'real_src': art_src,
                     'is_locked': False,
+                    'snippet': art.get('snippet', ''),
                 })
 
             day_books.append({
@@ -669,7 +670,7 @@ def GetSavedOebList(sourceDir: str) -> list:
             tocFile = os.path.join(bookDir, 'toc.ncx')
             prefix = f'{date}/{book}'
             meta = ExtractBookMeta(opfFile)
-            articles = ExtractArticleList(tocFile, prefix)
+            articles = ExtractArticleList(tocFile, prefix, bookDir)
             if meta and articles:
                 bTitle = meta.get('title') or clean_title(book)
                 someDay['books'].append({'title': bTitle, 'language': meta.get('language', 'en'), 
@@ -702,8 +703,37 @@ def ExtractBookMeta(opfFile: str) -> dict:
     
     return ret
 
-#从toc.ncx里面提取文章列表，返回一个字典列表 [{title:,'src':,}]
-def ExtractArticleList(ncxFile: str, prefix: str) -> list:
+#提取文章前300个字符纯文本或摘要
+def extract_article_snippet(article_path: str) -> str:
+    if not os.path.isfile(article_path):
+        return ''
+    try:
+        # 1. 尝试从上级 feed index.html 中的 .article_description 获取（Calibre 生成结构）
+        art_dir_name = os.path.basename(os.path.dirname(article_path))
+        feed_index = os.path.join(os.path.dirname(os.path.dirname(article_path)), 'index.html')
+        if os.path.isfile(feed_index):
+            with open(feed_index, 'rb') as fp:
+                tree = lxml_html.fromstring(fp.read())
+            li = tree.xpath(f'//li[@id="{art_dir_name}"]')
+            if li:
+                desc_div = li[0].xpath('.//div[contains(@class, "article_description")]')
+                if desc_div:
+                    text = ' '.join(desc_div[0].text_content().split())
+                    if text:
+                        return text[:300]
+        # 2. 回退直接从文章自身 HTML 正文提取纯文本前 300 字符
+        with open(article_path, 'rb') as fp:
+            raw = fp.read(8192)
+        tree = lxml_html.fromstring(raw)
+        for tag in tree.xpath('//h1 | //h2 | //h3 | //title | //style | //script | //nav | //head'):
+            tag.drop_tree()
+        text = ' '.join(tree.text_content().split())
+        return text[:300]
+    except Exception:
+        return ''
+
+#从toc.ncx里面提取文章列表，返回一个字典列表 [{title:,'src':, 'snippet':}]
+def ExtractArticleList(ncxFile: str, prefix: str, bookDir: str = '') -> list:
     if not os.path.isfile(ncxFile):
         return []
 
@@ -724,7 +754,10 @@ def ExtractArticleList(ncxFile: str, prefix: str) -> list:
             raw_text = (text.text or '').strip()
             article_src = src.attrib.get('src', '')
             if raw_text and article_src:
-                ret.append({'title': clean_title(raw_text), 'src': f'{prefix}/{article_src}'})
+                snippet = ''
+                if bookDir:
+                    snippet = extract_article_snippet(os.path.join(bookDir, article_src))
+                ret.append({'title': clean_title(raw_text), 'src': f'{prefix}/{article_src}', 'snippet': snippet})
     return ret
 
 #受限文章鉴权失败时渲染的优雅遮罩引导页

@@ -1180,6 +1180,25 @@ function markArticleAsRead(src) {
   }
 }
 
+//获取文章摘要或纯文本片段
+function getArticleSnippet(article) {
+  if (!article) return '';
+  if (article.snippet) return article.snippet;
+  if (!g_books || !article.src) return '';
+  for (var i = 0; i < g_books.length; i++) {
+    var books = g_books[i].books || [];
+    for (var j = 0; j < books.length; j++) {
+      var articles = books[j].articles || [];
+      for (var k = 0; k < articles.length; k++) {
+        if (articles[k].src === article.src) {
+          return articles[k].snippet || '';
+        }
+      }
+    }
+  }
+  return '';
+}
+
 //记录阅读历史（最多保留20条）
 function saveReadingHistory(article) {
   if (!article || !article.src || !article.title) return;
@@ -1190,11 +1209,13 @@ function saveReadingHistory(article) {
     var newHistory = [];
     var bookTitle = getBookTitleForArticle(article);
     var dateStr = getArticleDate(article);
+    var snippetStr = getArticleSnippet(article);
     newHistory.push({
       title: article.title,
       src: article.src,
       bookTitle: bookTitle,
       date: dateStr,
+      snippet: snippetStr,
       time: new Date().getTime()
     });
     for (var i = 0; i < history.length; i++) {
@@ -1212,7 +1233,13 @@ function getReadingHistory() {
   if (!window.localStorage) return [];
   try {
     var raw = localStorage.getItem('ke_reader_history');
-    return raw ? JSON.parse(raw) : [];
+    var list = raw ? JSON.parse(raw) : [];
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i].snippet) {
+        list[i].snippet = getArticleSnippet(list[i]);
+      }
+    }
+    return list;
   } catch (e) {
     return [];
   }
@@ -1238,7 +1265,8 @@ function getLatestArticles(maxCount) {
             src: art.src || '',
             is_locked: art.is_locked ? true : false,
             bookTitle: book.title || '',
-            date: dateStr
+            date: dateStr,
+            snippet: art.snippet || ''
           });
           if (list.length >= maxCount) {
             return list;
@@ -1322,17 +1350,24 @@ function renderDashboard(tab) {
 
     var isRead = (!isLocked && item.src) ? isArticleRead(item.src) : false;
     var readCardClass = isLocked ? 'is-locked' : (isRead ? 'is-read' : 'is-unread');
-    var cardAction = isLocked ? (isZh ? '🔒 解锁阅读 →' : '🔒 Unlock →') : actionText;
 
-    html.push('<div class="dashboard-card ' + readCardClass + '" onclick="openArticleFromCard(this)" data-src="' + safeSrc + '" data-title="' + safeTitle + '" data-locked="' + (isLocked ? '1' : '0') + '">');
+    var snippetText = (item.snippet || getArticleSnippet(item) || '').trim();
+    if (snippetText.length > 300) {
+      snippetText = snippetText.slice(0, 300) + '...';
+    }
+    var safeSnippet = snippetText.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    html.push('<div class="dashboard-card dashboard-list-item ' + readCardClass + '" onclick="openArticleFromCard(this)" data-src="' + safeSrc + '" data-title="' + safeTitle + '" data-locked="' + (isLocked ? '1' : '0') + '">');
     html.push('  <div class="dashboard-card-top">');
-    html.push('    ' + bookBadge + lockBadge);
+    html.push('    <div class="dashboard-card-title-wrap">');
+    html.push('      ' + bookBadge + lockBadge);
+    html.push('      <h3 class="dashboard-card-title" title="' + safeTitle + '">' + item.title + '</h3>');
+    html.push('    </div>');
     html.push('    ' + dateTag);
     html.push('  </div>');
-    html.push('  <h3 class="dashboard-card-title" title="' + safeTitle + '">' + item.title + '</h3>');
-    html.push('  <div class="dashboard-card-footer">');
-    html.push('    <span class="dashboard-card-action">' + cardAction + '</span>');
-    html.push('  </div>');
+    if (safeSnippet) {
+      html.push('  <div class="dashboard-card-snippet">' + safeSnippet + '</div>');
+    }
     html.push('</div>');
   }
   container.innerHTML = html.join('');
