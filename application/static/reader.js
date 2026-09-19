@@ -632,6 +632,13 @@ function highlightCurrentArticle() {
   }
   
   var navContent = document.getElementById('nav-content');
+  if (!navContent) return;
+
+  var filterItems = navContent.querySelectorAll('.active-filter');
+  for (var j = 0; j < filterItems.length; j++) {
+    filterItems[j].classList.remove('active-filter');
+  }
+
   var items = navContent.querySelectorAll('.nav-title');
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
@@ -943,7 +950,7 @@ function populateBooks(expandLevel) {
     }
 
     ostr.push('<div class="nav-item">' +
-                '<div class="nav-date">' +
+                '<div class="nav-date" data-date="' + dateStr + '">' +
                   '<span class="tree-icon">&#x25b8;</span>');
     ostr.push(    '<span>' + dateStr + '</span>');
     ostr.push(  '</div>');
@@ -953,10 +960,12 @@ function populateBooks(expandLevel) {
       if (!book || !articles || articles.length == 0) {
         continue;
       }
+      var sBookTitle = (book.title || '').replace(/"/g, '&quot;');
+      var sBookDir = (book.bookDir || '').replace(/"/g, '&quot;');
       ostr.push(
-        '<div class="nav-book">' +
-          '<div class="nav-book-title">' +
-            '<input type="checkbox" class="nav-book-chk" onclick="javascript:event.stopPropagation()" value="' + book.bookDir + '"/>');
+        '<div class="nav-book" data-date="' + dateStr + '" data-book-dir="' + sBookDir + '" data-book-title="' + sBookTitle + '">' +
+          '<div class="nav-book-title" data-date="' + dateStr + '" data-book-dir="' + sBookDir + '" data-book-title="' + sBookTitle + '">' +
+            '<input type="checkbox" class="nav-book-chk" onclick="javascript:event.stopPropagation()" value="' + sBookDir + '"/>');
       ostr.push('<span>' + book.title + '</span>');
       ostr.push(
           '</div>');
@@ -1012,15 +1021,17 @@ function nodeOrChild(klass, target, parent) {
   return null;
 }
 
-//监听点击文章标题的事件，展开或折叠树形结构，打开点击的文章
+//监听点击文章标题/书籍/日期的事件，展开或折叠树形结构，并切换列表或打开点击的文章
 //此事件注册在nav-content上
 function navClickEvent(event) {
   var parent = document.getElementById('nav-content');
   var target = event.target || event.srcElement;
   
-  var navDate = nodeOrChild('nav-date', target, parent);
-  var navBook = nodeOrChild('nav-book', target, parent);
   var navTitle = nodeOrChild('nav-title', target, parent);
+  var navBookTitle = nodeOrChild('nav-book-title', target, parent);
+  var navBook = nodeOrChild('nav-book', target, parent);
+  var navDate = nodeOrChild('nav-date', target, parent);
+
   if (navTitle) {
     var isLocked = navTitle.getAttribute('data-locked') === '1';
     var src = navTitle.getAttribute('data-src');
@@ -1033,10 +1044,65 @@ function navClickEvent(event) {
     if (src && title) {
       openArticle({title: title, src: src});
     }
+  } else if (navBookTitle) {
+    var parentBook = navBookTitle.closest ? navBookTitle.closest('.nav-book') : navBookTitle.parentNode;
+    if (parentBook && parentBook.classList.contains('nav-book')) {
+      toggleNavBook(parentBook);
+    }
+    var bTitle = navBookTitle.getAttribute('data-book-title');
+    var dStr = navBookTitle.getAttribute('data-date');
+    if (dStr && bTitle) {
+      filterArticlesByBook(dStr, bTitle, navBookTitle);
+    }
   } else if (navBook) {
     toggleNavBook(navBook);
+    var bTitle2 = navBook.getAttribute('data-book-title');
+    var dStr2 = navBook.getAttribute('data-date');
+    if (dStr2 && bTitle2) {
+      var bTitleElem = navBook.querySelector('.nav-book-title') || navBook;
+      filterArticlesByBook(dStr2, bTitle2, bTitleElem);
+    }
   } else if (navDate) {
     toggleNavDate(navDate);
+    var dateVal = navDate.getAttribute('data-date');
+    if (dateVal) {
+      filterArticlesByDate(dateVal, navDate);
+    }
+  }
+}
+
+//双击事件：确保子节点完全展开，并强制刷新右侧过滤列表
+function navDblClickEvent(event) {
+  var parent = document.getElementById('nav-content');
+  var target = event.target || event.srcElement;
+  var navBookTitle = nodeOrChild('nav-book-title', target, parent);
+  var navBook = nodeOrChild('nav-book', target, parent);
+  var navDate = nodeOrChild('nav-date', target, parent);
+
+  if (navBookTitle || navBook) {
+    var bElem = navBookTitle || navBook;
+    var parentB = bElem.closest ? bElem.closest('.nav-book') : bElem.parentNode;
+    if (parentB && parentB.classList.contains('nav-book')) {
+      var subNav = parentB.querySelector('.nav-article');
+      if (subNav) subNav.style.display = "block";
+    }
+    var bTitle = bElem.getAttribute('data-book-title');
+    var dStr = bElem.getAttribute('data-date');
+    if (dStr && bTitle) {
+      var titleTarget = (parentB && parentB.querySelector('.nav-book-title')) || bElem;
+      filterArticlesByBook(dStr, bTitle, titleTarget);
+    }
+  } else if (navDate) {
+    var toggleIcon = navDate.querySelector('.tree-icon');
+    if (toggleIcon) toggleIcon.textContent = "▾";
+    var items = navDate.parentNode.querySelectorAll('.nav-book');
+    for (var i = 0; i < items.length; i++) {
+      items[i].style.display = "block";
+    }
+    var dateVal = navDate.getAttribute('data-date');
+    if (dateVal) {
+      filterArticlesByDate(dateVal, navDate);
+    }
   }
 }
 
@@ -1291,40 +1357,14 @@ function openArticleFromCard(card) {
   }
 }
 
-//渲染主页卡片列表
-function renderDashboard(tab) {
-  tab = tab || g_currentDashboardTab || 'recent';
-  g_currentDashboardTab = tab;
+//渲染文章卡片列表
+function renderArticleList(list, emptyText) {
   var container = document.getElementById('dashboard-cards-container');
   if (!container) return;
-
-  var recentArticles = getLatestArticles(20);
-  var historyArticles = getReadingHistory();
-
-  var countRecent = document.getElementById('count-recent');
-  var countHistory = document.getElementById('count-history');
-  if (countRecent) countRecent.textContent = recentArticles.length;
-  if (countHistory) countHistory.textContent = historyArticles.length;
-
-  var btnRecent = document.getElementById('tab-recent');
-  var btnHistory = document.getElementById('tab-history');
-  if (btnRecent && btnHistory) {
-    if (tab === 'history') {
-      btnRecent.className = 'dashboard-tab-btn';
-      btnHistory.className = 'dashboard-tab-btn active';
-    } else {
-      btnRecent.className = 'dashboard-tab-btn active';
-      btnHistory.className = 'dashboard-tab-btn';
-    }
-  }
-
-  var list = (tab === 'history') ? historyArticles : recentArticles;
   var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  emptyText = emptyText || (isZh ? '暂无内容，请稍后再试。' : 'No content available.');
 
   if (!list || list.length === 0) {
-    var emptyText = (tab === 'history') ?
-      (i18n.emptyHistory || (isZh ? '暂无阅读历史，点击上方最新内容即可开始阅读！' : 'No reading history yet. Pick an article to start reading!')) :
-      (i18n.emptyFeeds || (isZh ? '暂无内容，请稍后再试。' : 'No downloaded content available.'));
     container.innerHTML = '<div class="dashboard-empty">' +
       '<div class="dashboard-empty-icon">' +
         '<svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
@@ -1337,7 +1377,6 @@ function renderDashboard(tab) {
     return;
   }
 
-  var actionText = (tab === 'history') ? (isZh ? '继续阅读 →' : 'Continue →') : (isZh ? '开始阅读 →' : 'Read Now →');
   var html = [];
   for (var i = 0; i < list.length; i++) {
     var item = list[i];
@@ -1373,8 +1412,213 @@ function renderDashboard(tab) {
   container.innerHTML = html.join('');
 }
 
+//更新 Dashboard 头部分类 Tab 为当前过滤条件
+function updateDashboardTabsForFilter(filterTitle, count) {
+  var tabsContainer = document.querySelector('.dashboard-tabs');
+  if (!tabsContainer) return;
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var allLatestText = isZh ? '← 全部最新' : '← Show All';
+  var filterLabel = filterTitle.length > 18 ? (filterTitle.slice(0, 18) + '...') : filterTitle;
+  tabsContainer.innerHTML = 
+    '<button class="dashboard-tab-btn active" id="tab-filter" style="cursor:default;">' +
+      '<span>' + filterLabel + '</span>' +
+      '<span class="dashboard-tab-count">' + count + '</span>' +
+    '</button>' +
+    '<button class="dashboard-tab-btn" id="tab-reset-filter" onclick="showDashboard()">' +
+      '<span>' + allLatestText + '</span>' +
+    '</button>';
+}
+
+//恢复 Dashboard 头部默认 Tab（最新推荐与阅读历史）
+function restoreDefaultDashboardTabs() {
+  var tabsContainer = document.querySelector('.dashboard-tabs');
+  if (!tabsContainer) return;
+  if (!document.getElementById('tab-recent')) {
+    var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+    var latestText = isZh ? '全部最新' : 'Latest Feeds';
+    var historyText = isZh ? '阅读历史' : 'Reading History';
+    tabsContainer.innerHTML = 
+      '<button class="dashboard-tab-btn active" id="tab-recent" onclick="switchDashboardTab(\'recent\')">' +
+        '<span>' + latestText + '</span>' +
+        '<span class="dashboard-tab-count" id="count-recent">0</span>' +
+      '</button>' +
+      '<button class="dashboard-tab-btn" id="tab-history" onclick="switchDashboardTab(\'history\')">' +
+        '<span>' + historyText + '</span>' +
+        '<span class="dashboard-tab-count" id="count-history">0</span>' +
+      '</button>';
+  }
+}
+
+//获取指定日期下的所有文章列表
+function getArticlesByDate(dateStr) {
+  var list = [];
+  if (!g_books || !dateStr) return list;
+  for (var i = 0; i < g_books.length; i++) {
+    var entry = g_books[i];
+    if (entry.date === dateStr) {
+      var books = entry.books || [];
+      for (var j = 0; j < books.length; j++) {
+        var book = books[j];
+        var articles = book.articles || [];
+        for (var k = 0; k < articles.length; k++) {
+          var art = articles[k];
+          if (art && art.title && (art.src || art.is_locked)) {
+            list.push({
+              title: art.title,
+              src: art.src || '',
+              is_locked: art.is_locked ? true : false,
+              bookTitle: book.title || '',
+              date: dateStr,
+              snippet: art.snippet || ''
+            });
+          }
+        }
+      }
+      break;
+    }
+  }
+  return list;
+}
+
+//获取指定日期和媒体/书籍下的所有文章列表
+function getArticlesByBook(dateStr, bookTitleOrDir) {
+  var list = [];
+  if (!g_books || !bookTitleOrDir) return list;
+  for (var i = 0; i < g_books.length; i++) {
+    var entry = g_books[i];
+    if (!dateStr || entry.date === dateStr) {
+      var books = entry.books || [];
+      for (var j = 0; j < books.length; j++) {
+        var book = books[j];
+        if (book.title === bookTitleOrDir || book.bookDir === bookTitleOrDir) {
+          var articles = book.articles || [];
+          for (var k = 0; k < articles.length; k++) {
+            var art = articles[k];
+            if (art && art.title && (art.src || art.is_locked)) {
+              list.push({
+                title: art.title,
+                src: art.src || '',
+                is_locked: art.is_locked ? true : false,
+                bookTitle: book.title || '',
+                date: entry.date || dateStr || '',
+                snippet: art.snippet || ''
+              });
+            }
+          }
+        }
+      }
+      if (dateStr && entry.date === dateStr) {
+        break;
+      }
+    }
+  }
+  return list;
+}
+
+//在右侧内容区域展示过滤后的文章列表
+function showFilteredArticles(filterTitle, filterSubtitle, articles, activeElement) {
+  var dashboard = document.getElementById('home-dashboard');
+  var readingCard = document.getElementById('reading-card');
+  var badge = document.getElementById('topbar-book-badge');
+  var topbarTitle = document.getElementById('topbar-article-title');
+  var dTitle = document.getElementById('dashboard-title');
+  var dSubtitle = document.getElementById('dashboard-subtitle');
+
+  if (dashboard) dashboard.style.display = 'block';
+  if (readingCard) readingCard.style.display = 'none';
+  if (badge) badge.style.display = 'none';
+  if (topbarTitle) {
+    topbarTitle.textContent = filterTitle;
+    topbarTitle.setAttribute('title', filterTitle);
+  }
+  if (dTitle) {
+    dTitle.textContent = filterTitle;
+  }
+  if (dSubtitle) {
+    dSubtitle.textContent = filterSubtitle;
+  }
+
+  // 清除左侧高亮并设置当前过滤项的高亮
+  var navContent = document.getElementById('nav-content');
+  if (navContent) {
+    var activeArticles = navContent.querySelectorAll('.active-article');
+    for (var i = 0; i < activeArticles.length; i++) {
+      activeArticles[i].classList.remove('active-article');
+    }
+    var activeFilters = navContent.querySelectorAll('.active-filter');
+    for (var j = 0; j < activeFilters.length; j++) {
+      activeFilters[j].classList.remove('active-filter');
+    }
+  }
+
+  if (activeElement) {
+    activeElement.classList.add('active-filter');
+  }
+
+  updateDashboardTabsForFilter(filterTitle, articles.length);
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  renderArticleList(articles, isZh ? '该分类下暂无文章。' : 'No articles in this section.');
+
+  hideNavbar();
+}
+
+//过滤指定日期的文章
+function filterArticlesByDate(dateStr, navElem) {
+  var articles = getArticlesByDate(dateStr);
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var title = dateStr + (isZh ? ' 汇总' : ' Feeds');
+  var subtitle = isZh ? ('共 ' + articles.length + ' 篇内容 · 点击卡片立即阅读') : (articles.length + ' articles available · Click to read');
+  showFilteredArticles(title, subtitle, articles, navElem);
+}
+
+//过滤指定媒体/书籍的文章
+function filterArticlesByBook(dateStr, bookTitle, navElem) {
+  var articles = getArticlesByBook(dateStr, bookTitle);
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var title = bookTitle;
+  var subtitle = (dateStr ? (dateStr + ' · ') : '') + (isZh ? ('共 ' + articles.length + ' 篇精选文章 · 点击卡片立即阅读') : (articles.length + ' articles · Click to read'));
+  showFilteredArticles(title, subtitle, articles, navElem);
+}
+
+//渲染主页卡片列表
+function renderDashboard(tab) {
+  tab = tab || g_currentDashboardTab || 'recent';
+  g_currentDashboardTab = tab;
+  var container = document.getElementById('dashboard-cards-container');
+  if (!container) return;
+
+  var recentArticles = getLatestArticles(20);
+  var historyArticles = getReadingHistory();
+
+  var countRecent = document.getElementById('count-recent');
+  var countHistory = document.getElementById('count-history');
+  if (countRecent) countRecent.textContent = recentArticles.length;
+  if (countHistory) countHistory.textContent = historyArticles.length;
+
+  var btnRecent = document.getElementById('tab-recent');
+  var btnHistory = document.getElementById('tab-history');
+  if (btnRecent && btnHistory) {
+    if (tab === 'history') {
+      btnRecent.className = 'dashboard-tab-btn';
+      btnHistory.className = 'dashboard-tab-btn active';
+    } else {
+      btnRecent.className = 'dashboard-tab-btn active';
+      btnHistory.className = 'dashboard-tab-btn';
+    }
+  }
+
+  var list = (tab === 'history') ? historyArticles : recentArticles;
+  var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
+  var emptyText = (tab === 'history') ?
+    (i18n.emptyHistory || (isZh ? '暂无阅读历史，点击上方最新内容即可开始阅读！' : 'No reading history yet. Pick an article to start reading!')) :
+    (i18n.emptyFeeds || (isZh ? '暂无内容，请稍后再试。' : 'No downloaded content available.'));
+
+  renderArticleList(list, emptyText);
+}
+
 //切换主页 Tab
 function switchDashboardTab(tab) {
+  restoreDefaultDashboardTabs();
   renderDashboard(tab);
 }
 
@@ -1384,6 +1628,8 @@ function showDashboard() {
   var readingCard = document.getElementById('reading-card');
   var badge = document.getElementById('topbar-book-badge');
   var titleTag = document.getElementById('topbar-article-title');
+  var dTitle = document.getElementById('dashboard-title');
+  var dSubtitle = document.getElementById('dashboard-subtitle');
   var isZh = (typeof g_isZh !== 'undefined') ? g_isZh : 1;
 
   if (dashboard) dashboard.style.display = 'block';
@@ -1393,6 +1639,14 @@ function showDashboard() {
     titleTag.textContent = isZh ? '推荐阅读与历史' : 'Reading Hub';
     titleTag.setAttribute('title', titleTag.textContent);
   }
+  if (dTitle) {
+    dTitle.textContent = isZh ? '推荐阅读与历史' : 'Reading Hub';
+  }
+  if (dSubtitle) {
+    dSubtitle.textContent = isZh ? '探索最新抓取的订阅内容，或继续之前的阅读' : 'Discover recent articles and pick up where you left off';
+  }
+
+  restoreDefaultDashboardTabs();
 
   // 清除左侧树中高亮
   var navContent = document.getElementById('nav-content');
@@ -1400,6 +1654,10 @@ function showDashboard() {
     var activeItems = navContent.querySelectorAll('.active-article');
     for (var i = 0; i < activeItems.length; i++) {
       activeItems[i].classList.remove('active-article');
+    }
+    var activeFilters = navContent.querySelectorAll('.active-filter');
+    for (var j = 0; j < activeFilters.length; j++) {
+      activeFilters[j].classList.remove('active-filter');
     }
   }
 
@@ -1885,6 +2143,7 @@ document.addEventListener('DOMContentLoaded', function() {
   content.addEventListener('click', clickEvent);
   content.addEventListener('scroll', updatePosIndicator);
   navContent.addEventListener('click', navClickEvent);
+  navContent.addEventListener('dblclick', navDblClickEvent);
   navContent.addEventListener('scroll', updateNavIndicator);
   iframe.addEventListener('load', iframeLoadEvent);
   populateBooks(1);

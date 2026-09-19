@@ -421,10 +421,21 @@ html, body {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  user-select: none;
   transition: background-color 0.15s ease;
 }
 .nav-book-title:hover {
   background-color: var(--hover-bg);
+}
+.nav-date.active-filter {
+  background-color: var(--active-bg);
+  color: var(--accent-color);
+  font-weight: 700;
+}
+.nav-book-title.active-filter {
+  background-color: var(--active-bg);
+  color: var(--accent-color);
+  font-weight: 700;
 }
 .nav-book-chk {
   margin-right: 8px;
